@@ -1,0 +1,52 @@
+<!-- models/unicycle/unicycle.urdf -->
+<?xml version="1.0"?>
+<robot name="unicycle">
+
+  <!-- synthetic world link so floating root can reference a parent -->
+  <link name="world"/>
+
+  <link name="base_link">
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="0.01" iyy="0.01" izz="0.02" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <cylinder radius="0.15" length="0.1"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.2 0.5 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.15" length="0.1"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- heading indicator -->
+  <link name="heading_marker">
+    <visual>
+      <geometry>
+        <box size="0.12 0.02 0.02"/>
+      </geometry>
+      <material name="red">
+        <color rgba="1 0.3 0.3 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="heading_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="heading_marker"/>
+    <origin xyz="0.12 0 0.05"/>
+  </joint>
+
+  <!-- Floating root joint so the model has a free base in MuJoCo -->
+  <joint name="root_joint" type="floating">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+</robot>

@@ -1,0 +1,21 @@
+model_path: "models/unicycle/unicycle.xml"
+
+dt: 0.005
+t_end: 15.0
+
+video_fps: 30
+video_path: "videos/unicycle_lyapunov.mp4"
+video_w: 640
+video_h: 480
+
+control:
+  v: 1.0
+  R: 1.5
+  ky: 1.0
+  ktheta: 2.0
+
+camera:
+  lookat:    [0.0, 0.0, 0.0]
+  distance:  10.0          # increase until full circle fits
+  elevation: -70.0         # negative = looking steeply downward
+  azimuth:   90.0          # compass direction of the camera

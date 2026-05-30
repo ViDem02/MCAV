@@ -1,0 +1,14 @@
+model_path: "models/unicycle/unicycle.xml"
+
+dt: 0.005
+t_end: 10.0
+
+video_fps: 30
+video_path: "videos/unicycle_circle.mp4"
+video_w: 640
+video_h: 480
+
+control:
+  k1: 1.0
+  k2: 2.0
+  lookahead: 0.5

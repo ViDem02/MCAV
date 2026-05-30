@@ -1,0 +1,246 @@
+% Poster Trekie — versione LaTeX (A4, 2 colonne)
+% Template di riferimento: latex/model.tex (rho class) — qui usiamo KOMA-Script (scrartcl)
+
+\documentclass[10pt,a4paper]{scrartcl}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[italian]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{multicol}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{top=12mm,bottom=12mm,left=12mm,right=12mm}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.35em}
+\setlength{\columnsep}{10mm}
+
+\setlist[itemize]{leftmargin=*,topsep=0pt,parsep=0pt,partopsep=0pt,itemsep=3.75pt}
+
+\definecolor{accent}{RGB}{25,55,95}
+
+\pagestyle{empty}
+
+% Spaziatura e stile titoli più adatti a un poster
+\RedeclareSectionCommand[beforeskip=0.9ex plus 0.2ex minus 0.1ex, afterskip=0.35ex]{section}
+\RedeclareSectionCommand[beforeskip=0.55ex plus 0.2ex minus 0.1ex, afterskip=0.25ex]{subsection}
+
+\setkomafont{section}{\large\bfseries\color{accent}}
+\setkomafont{subsection}{\normalsize\bfseries\color{accent}}
+
+\newcommand{\PosterSection}[1]{%
+  \section*{#1}%
+  \vspace{0.4em}%
+  {\color{accent!35}\hrule height 0.4pt}%
+  \vspace{0.25em}%
+}
+
+\begin{document}
+
+\begin{multicols*}{2}
+
+\begin{center}
+  {\Huge\sffamily\bfseries\color{accent} Trekie}\\[-0.05em]
+  {\large\sffamily Un’app di navigazione dell’assicurazione sanitaria}\\[0.35em]
+  
+  \includegraphics[width=\columnwidth,height=40mm,keepaspectratio]{../img/logo.png}\\[.5cm]
+  \textbf{Idea chiave:} una funzionalità aggiuntiva che descrive, passo dopo passo,
+  come orientarsi nel sistema sanitario pubblico e privato. 
+\end{center}
+
+\PosterSection{CPS}
+\subsection*{Cliente}
+Studenti internazionali, nomadi digitali e viaggiatori di breve durata che vivono o soggiornano in un paese straniero.
+
+\subsection*{Problema}
+Questi utenti si trovano ad affrontare termini assicurativi complessi e sistemi sanitari sconosciuti, con conseguente confusione durante le emergenze e un alto rischio di rifiuto delle richieste di rimborso o costi inattesi.
+
+\subsection*{Soluzione}
+Un’app di navigazione che traduce le polizze in linguaggio semplice e fornisce guide passo-passo personalizzate al cliente per accedere alle cure e per ottenere e inviare le richieste di rimborso.
+
+\PosterSection{Roadmap}
+\begin{itemize}
+  \item \textbf{Anno 0 — Sviluppo app:} un’app di navigazione dell’assicurazione sanitaria.
+  \item \textbf{Mese 6 — Acquisizione utenti:} obiettivo 10.000 utenti; focus su marketing, costruzione della community e partnership.
+  \item \textbf{Anno 1 — Vendita dati:} dati aggregati + anonimizzati + dati comportamentali (non identificabili).
+  \item \textbf{Anno 2 — Vendita licenza} a università/aziende.
+\end{itemize}
+
+\PosterSection{Piano di lavoro}
+\subsection*{Principio}
+Vincere prima un pilot piccolo e misurabile in collaborazione con un dipartimento, poi usare quel caso come riferimento per approcciare le università più grandi.
+
+\subsection*{Selezione target}
+\begin{itemize}
+  \item Preferire un’istituzione privata/più piccola (es. NABA/IED/Domus) o un singolo dipartimento/program di un grande ateneo (meno stakeholder, approvazioni più rapide).
+  \item Definire uno scope iniziale stretto: “navigazione sanitaria in una data città, fornire passi per emergenze e spiegazione SSN vs assicurazione privata, per fasi”
+\end{itemize}
+
+\PosterSection{Punti di forza (Unique Selling Proposition)}
+\subsection*{Per gli utenti dell’app}
+\begin{itemize}
+  \item Localizzazione
+  \item Guida passo-passo durante le emergenze
+  \item Personalizzazione della procedura, in base a sintomi, gravità, tipo di assicurazione personale e azienda assicuratrice.
+\end{itemize}
+  
+\subsection*{Per le assicurazioni}
+\begin{itemize}
+  \item Insight di alta qualità
+  \item Dati di utilizzo - domande più frequenti
+  \item Analisi per la segmentazione di una nuova offerta di mercato
+\end{itemize}
+
+\subsection*{Per le università}
+\begin{itemize}
+  \item Riduzione del carico operativo di Welcome Office e segreterie grazie a guide personalizzate e chiare.
+  \item Meno escalation e richieste ripetute: studenti più autonomi nel navigare assicurazione e sistema sanitario locale.
+  \item Miglior esperienza e retention degli studenti internazionali tramite supporto multilingue nel momento del bisogno.
+\end{itemize}
+  
+\subsection*{Funzionalità incluse}
+\begin{itemize}
+  \item Guida informativa passo-passo alla raccolta documenti
+  \item Catalogo di centri medici convenzionati e dei MMG che parlano inglese
+  \item Invio e gestione delle richieste di rimborso
+\end{itemize}
+
+
+\PosterSection{Modello di ricavi}
+Alle università viene proposto un pagamento di una licenza bastata sul numero di studenti utilizzatori. Gli utenti finali hanno la possibilità di pagare un \textit{premium} per ottenere funzionalità aggiuntive. 
+
+\subsection*{Licenza studenti}
+\begin{itemize}
+  \item \textbf{Prezzo:} 10\,€ per studente
+  \item \textbf{Quantità stimata:} circa 2.000 studenti internazionali per università
+  \item \textbf{Obiettivo secondo anno:} 2-3 università
+  \item \textbf{Obiettivo quarto anno:} 7-25 università
+\end{itemize}
+
+
+
+\PosterSection{Interviste}
+\begin{itemize}
+  \item \textbf{10} interviste tenute con gli studenti internazionali di Trento
+  \item \textbf{20} risposte ad un survey mirato sui bisogni degli studenti
+  \item Validazione con il \textit{Welcome Office} dell'università di Trento (con Dott. Nicola Battelli)
+  \item Validazione con il Research and Development Manager di Dedalus Italia
+\end{itemize}
+
+
+
+
+
+
+
+
+\PosterSection{Attrattività del mercato}
+\begin{itemize}
+  \item L’Italia è un mercato in forte crescita e poco servito.
+  \item 2,05M studenti internazionali totali nel 2024/25 — massimo storico.
+  \item +10\% crescita annua degli studenti internazionali dal 2022.
+  \item \#3 destinazione UE con crescita più rapida
+\end{itemize}
+
+
+\PosterSection{Opportunità per Trekie}
+Il mercato italiano degli studenti internazionali è il più in crescita in Europa, con \textbf{zero concorrenza} nella navigazione assicurativa post-acquisto e multilingue. Trekie entra in uno spazio incontestato, con punti critici misurabili per le università usati come leva di vendita.
+
+\PosterSection{Adeguatezza al mercato (market fit)}
+\subsection*{TAM}
+\textbf{Mercato delle piattaforme di navigazione sanitaria:} 12,64B\,€
+
+\subsection*{SAM}
+\textbf{632M\,€} — viaggiatori/studenti internazionali + expat + nuovi arrivati in Italia, 5\% del TAM
+
+\subsection*{SOM}
+\textbf{6,32M\,€} — 1\% del SAM
+
+\PosterSection{Business Model Canvas}
+\begin{center}
+  \includegraphics[width=\columnwidth,height=40mm,keepaspectratio]{../img/nice graph.jpg}
+\end{center}
+
+\subsection*{Segmenti di clientela}
+Creiamo valore per:
+\begin{itemize}
+  \item Grandi aziende che richiedono frequenti viaggi e che organizzano l’assicurazione per i propri dipendenti.
+  \item Grandi organizzazioni che gestiscono e assicurano un numero elevato di persone.
+  \item Individui che viaggiano/vivono all’estero per lavoro o studio e sono assicurati dalla propria azienda/organizzazione.
+\end{itemize}
+I clienti più importanti:
+\begin{itemize}
+  \item Aziende multinazionali che negoziano costantemente con altre aziende all’estero.
+  \item Aziende di viaggio che operano su più paesi (compagnie aeree, autobus, spedizioni, ecc.).
+  \item Università con alta mobilità internazionale.
+\end{itemize}
+
+\subsection*{Proposta di valore}
+Riduciamo la complessità organizzativa nella gestione delle interazioni tra le assicurazioni sanitarie e i loro studenti, lavoratori e collaboratori. Il valore si basa su un design human-centric che offre informazioni chiave e non distorte nel momento del bisogno, grazie a una prioritizzazione fondata su conoscenza empirica continua degli utenti target.
+
+Aiutiamo a mitigare informazioni poco chiare, eterogenee e verbose nel settore delle assicurazioni sanitarie.
+
+Il prodotto core è un’app che fornisce informazioni empiricamente/statisticamente rilevanti per diversi tipi di utenti (dagli studenti ai dipendenti full-time). Per il settore sanitario/assicurativo privato, offriamo insight aggregati sui bisogni e sulle sfide degli utenti.
+
+Soddisfiamo il bisogno delle università di avere studenti consapevoli dell’assicurazione e in grado di navigare i servizi sanitari locali in modo fluido e autonomo; aiutiamo le aziende a ridurre la complessità legata alle frizioni dei sistemi sanitari che impattano i dipendenti; e aiutiamo le compagnie assicurative a generare una domanda più alta e più mirata per i loro prodotti.
+
+\subsection*{Canali}
+Raggiungiamo i clienti tramite:
+\begin{itemize}
+  \item Contatto diretto con le aziende.
+  \item Pubblicità/articoli su riviste per imprenditori e dirigenti.
+\end{itemize}
+
+\subsection*{Relazioni con i clienti}
+\begin{itemize}
+  \item Per i dirigenti: report/dashboard di controllo su eventuali incidenti, avanzamento e assistenza clienti.
+  \item Per i dipendenti: l’app Trekie con supporto in emergenza e per le richieste assicurative, oltre al supporto clienti.
+\end{itemize}
+
+\subsection*{Flussi di ricavi}
+\begin{itemize}
+  \item \textbf{Abbonamenti corporate:} 30\,€ al mese per dipendente.
+  \item \textbf{Abbonamenti università:} 10\,€ al mese per studente.
+  \item \textbf{Contratti enterprise:} ricavi ricorrenti da accordi B2B di lungo periodo.
+\end{itemize}
+
+\subsection*{Risorse chiave}
+\begin{itemize}
+  \item Ecosistema Trekie (app)
+  \item Talento tecnico e commerciale
+  \item Infrastruttura di supporto
+  \item Asset digitali (cloud e algoritmi di tracciamento)
+\end{itemize}
+
+\subsection*{Attività chiave}
+\begin{itemize}
+  \item Interviste e analisi utenti
+  \item Design CHI continuo
+  \item Sviluppo app
+  \item Networking e costruzione della presenza
+  \item Vendita e networking in presenza (eventi mirati/meeting specifici)
+\end{itemize}
+Le relazioni con i clienti sono il nucleo del modello e vengono mantenute dai fondatori e da un team di esperti commerciali. I ricavi derivano dall’interazione continua con i clienti.
+
+\subsection*{Partner chiave}
+Gruppi di consulenza per le relazioni con i clienti, compagnie assicurative e (se possibile) incubatori di startup.
+
+I fornitori chiave includono aziende tech che forniscono framework e librerie per lo sviluppo; i gruppi di consulenza forniscono conoscenza e insight vitali. I partner sviluppano la tecnologia che abilita funzionalità distintive legate all’interazione uomo-computer (CHI) e quindi vantaggi competitivi. Inoltre, offrono conoscenza continua che aiuta a costruire una base di conoscenza solida e coerente.
+
+\subsection*{Struttura dei costi}
+\begin{itemize}
+  \item \textbf{R\&D piattaforma:} sviluppo software, manutenzione e cybersecurity.
+  \item \textbf{Acquisizione \& marketing:} stipendi del team vendite e pubblicità B2B mirata.
+  \item \textbf{Operazioni:} stipendi staff di supporto 24/7 e costi infrastruttura cloud.
+  \item \textbf{Legale:} compliance assicurativa internazionale e normative privacy.
+\end{itemize}
+
+\end{multicols*}
+
+\end{document}

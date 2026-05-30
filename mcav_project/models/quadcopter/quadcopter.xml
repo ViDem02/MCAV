@@ -1,0 +1,77 @@
+<mujoco model="quadcopter">
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <default>
+    <geom rgba="0.8 0.8 0.8 1" contype="1" conaffinity="1"/>
+  </default>
+
+  <worldbody>
+    <light pos="-5 0 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="+5 0 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="0 -10 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="0 +10 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <geom name="floor" type="plane" size="20 20 0.1" rgba="0.9 0.9 0.9 1"/>
+
+    <body name="quad" pos="0 0 0.5">
+      <freejoint name="root"/>
+
+      <!-- central frame -->
+      <geom name="body" type="box"
+            size="0.06 0.06 0.025"
+            mass="0.5"
+            rgba="0.2 0.2 0.8 1"/>
+
+      <!-- 4 arms: X configuration at ±45° -->
+      <geom name="arm_fr" type="capsule" fromto="0 0 0  0.13 -0.13 0" size="0.012" mass="0.05"/>
+      <geom name="arm_fl" type="capsule" fromto="0 0 0  0.13  0.13 0" size="0.012" mass="0.05"/>
+      <geom name="arm_br" type="capsule" fromto="0 0 0 -0.13 -0.13 0" size="0.012" mass="0.05"/>
+      <geom name="arm_bl" type="capsule" fromto="0 0 0 -0.13  0.13 0" size="0.012" mass="0.05"/>
+
+      <!-- rotors (visual disks) -->
+      <geom name="prop_fr" type="cylinder" pos=" 0.13 -0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
+      <geom name="prop_fl" type="cylinder" pos=" 0.13  0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
+      <geom name="prop_br" type="cylinder" pos="-0.13 -0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
+      <geom name="prop_bl" type="cylinder" pos="-0.13  0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
+
+      <!--
+        Sites: where actuator forces are applied.
+        Gear vector = [fx fy fz tx ty tz] in site local frame.
+        Each motor produces:
+          - thrust along +z (force)
+          - reaction torque along z (±kτ, alternating CW/CCW)
+        CW  rotors (fr, bl): negative z-torque → gear "0 0 1 0 0 -0.012"
+        CCW rotors (fl, br): positive z-torque → gear "0 0 1 0 0  0.012"
+      -->
+      <site name="s_fr" pos=" 0.13 -0.13 0"/>   <!-- CW  -->
+      <site name="s_fl" pos=" 0.13  0.13 0"/>   <!-- CCW -->
+      <site name="s_br" pos="-0.13 -0.13 0"/>   <!-- CCW -->
+      <site name="s_bl" pos="-0.13  0.13 0"/>   <!-- CW  -->
+
+      <!-- IMU reference point at CoM -->
+      <site name="imu" pos="0 0 0" size="0.005"/>
+
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!--
+      ctrl ∈ [0, 4] N per motor.
+      Hover thrust per rotor ≈ total_mass * 9.81 / 4 ≈ 0.73 * 9.81 / 4 ≈ 1.79 N
+      so ctrlrange 0..4 gives enough headroom.
+    -->
+    <motor name="m_fr" site="s_fr" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
+    <motor name="m_fl" site="s_fl" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
+    <motor name="m_br" site="s_br" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
+    <motor name="m_bl" site="s_bl" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
+  </actuator>
+
+  <sensor>
+    <gyro         name="gyro"  site="imu"/>
+    <accelerometer name="accel" site="imu"/>
+    <framequat    name="quat"  objtype="site" objname="imu"/>
+    <framepos     name="pos"   objtype="site" objname="imu"/>
+    <framelinvel  name="vel"   objtype="site" objname="imu"/>
+  </sensor>
+
+</mujoco>

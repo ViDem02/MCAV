@@ -1,0 +1,51 @@
+# config/quadcopter_certified_circle.yaml
+# Identical physics to quadcopter_dynamic_circle.yaml.
+# The certification comes from the controller, not the config.
+
+model_path: "models/quadcopter/quadcopter_dynamic.xml"
+dt: 0.002
+t_end: 60.0
+
+video_fps: 30
+video_path: "videos/quadcopter_certified_circle.mp4"
+video_w: 1280
+video_h: 720
+
+figures_dir: "figures/quadcopter_certified_circle"
+
+mass: 0.80
+arm_d: 0.1838
+km: 0.012
+max_thrust_per_motor: 4.0
+
+controller:
+  kx:   1.0
+  ky:   1.0
+  kz:   1.5
+  kpsi: 2.0
+  kv:   4.0
+  kR:   8.0
+  kw:   2.5
+  full_ff: false    # set true to also add inertial feedforward (non-constant trajectories)
+
+trajectory:
+  radius:   3.0
+  omega:    0.5
+  z_height: 3.0
+
+camera:
+  lookat:    [0.0, 0.0, 2.0]
+  distance:  12.0
+  elevation: -30.0
+  azimuth:   45.0
+
+multithreading:
+  n_samples: 10000
+  max_radius: 3.0
+  n_jobs: -1
+  t_max: 4.0
+  initial_altitude_error: 0.0
+  ground_clearance: 0.1
+  success_threshold: 0.05
+  seed: 7
+  show_progress: true

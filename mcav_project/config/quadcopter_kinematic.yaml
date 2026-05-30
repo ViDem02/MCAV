@@ -1,0 +1,15 @@
+model_path: "models/quadcopter/quadcopter.xml"
+
+dt: 0.002
+t_end: 30.0
+
+video_fps: 15
+video_path: "videos/quadcopter_kinematic.mp4"
+video_w: 640
+video_h: 480
+
+camera:
+  lookat: [0.0, 0.0, 0.5]
+  distance: 8.0
+  elevation: -30.0
+  azimuth: 45.0

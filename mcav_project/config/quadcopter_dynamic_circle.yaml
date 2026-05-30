@@ -1,0 +1,43 @@
+# config/quadcopter_dynamic_circle.yaml
+
+model_path: "models/quadcopter/quadcopter_dynamic.xml"
+dt: 0.002           # physics timestep → 500 Hz
+t_end: 60.0         # longer than kinematic: inner loop needs time to converge
+
+video_fps: 30
+video_path: "videos/quadcopter_dynamic_circle.mp4"
+video_w: 1280
+video_h: 720
+
+figures_dir: "figures/quadcopter_dynamic_circle"
+
+# vehicle physical parameters (must match the MJCF mass budget)
+mass: 0.80          # kg  (body 0.5 + arms 0.2 + props 0.1)
+arm_d: 0.1838       # m   = 0.13 * sqrt(2)  (moment arm for roll/pitch)
+km: 0.012           # reaction-torque / thrust ratio
+max_thrust_per_motor: 4.0   # N
+
+controller:
+  # outer loop — position Lyapunov (same as kinematic)
+  kx:   1.0
+  ky:   1.0
+  kz:   1.5
+  kpsi: 2.0
+
+  # middle loop — velocity tracking
+  kv: 4.0
+
+  # inner loop — geometric attitude (SO3)
+  kR: 8.0           # attitude-error gain
+  kw: 2.5           # angular-rate damping
+
+trajectory:
+  radius:   3.0     # m
+  omega:    0.5     # rad/s  (one lap ≈ 12.6 s)
+  z_height: 3.0     # m
+
+camera:
+  lookat:    [0.0, 0.0, 2.0]
+  distance:  12.0
+  elevation: -30.0
+  azimuth:   45.0
