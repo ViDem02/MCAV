@@ -1,25 +1,51 @@
-# MCAV — Quickstart
+# MCAV — Actuator-aware geometric flight control for a quadrotor
 
-Very brief instructions to activate the environment and run the notebooks.
+A 0.8 kg quadrotor, simulated in MuJoCo, takes off and tracks a circular trajectory with a
+geometric controller on SO(3). Gains are synthesised with LMIs so that every motor stays inside
+its 0–8 N range, and the stability analysis is checked by SymPy instead of being asserted by hand.
 
-Activation (preferred via `uv`):
+| Result | Value |
+|---|---|
+| Steady-state tracking error | ~1e-9 m (machine precision) |
+| Motor forces, nominal mission | 1.7–2.7 N, inside the 0–8 N range (gains from the literature: −36…46 N) |
+| Monte Carlo, 500 random initial positions and attitudes up to 175° | ~96 % converge, every failure is a ground contact |
+| Symbolic identities verified | 21 |
+| Full reproduction | one command, about 2 minutes on a laptop |
 
-- Start Jupyter Lab inside the project's environment without manual activation:
+The technical report is in [`docs/report/`](docs/report/).
 
-  `cd mcav_project && uv run jupyter lab`
+## Quickstart
 
-Alternative: activate the created virtualenv manually:
+Requires [uv](https://docs.astral.sh/uv/) (it installs Python and every dependency).
 
-1. `cd mcav_project`
-2. `source .venv/bin/activate`
-3. `jupyter lab` (or `jupyter notebook`)
+```bash
+cd mcav_project
+uv run python main.py          # every number and figure of the report → results/  (~2 min)
+uv run python main.py --quick  # smaller Monte Carlo (~30 s)
+uv run pytest                  # 29 tests: symbolic proofs, LMI certificates, closed loop
+uv run jupyter lab             # notebooks/ — final.ipynb is the guided walkthrough
+```
 
-Running the notebooks:
+Build the report after `main.py` has run: `cd docs/report && latexmk -pdf report.tex`.
 
-- Open Jupyter Lab/Notebook in your browser and navigate to the `notebooks/` folder.
-- Open the notebook you want to run (for example, `final.ipynb`).
+## Layout
 
-Notes:
+```
+mcav_project/
+├── main.py                        reproduces every result (symbolic checks → LMI → simulation → Monte Carlo)
+├── config/                        mission, gains, design budgets (YAML)
+├── models/quadcopter/quadcopter.xml   MuJoCo model — single source of mass, inertia, motor geometry and limits
+├── src/
+│   ├── control/                   geometric controller, path-following reference generator
+│   ├── design/lmi_gains.py        input-bounded LMI state-feedback synthesis (cvxpy)
+│   ├── symbolic/                  stability analysis, every identity verified by SymPy
+│   └── experiments.py             headless simulations and Monte Carlo (MuJoCo, joblib)
+├── notebooks/                     walkthrough, path following, unicycle
+└── tests/                         pytest suite
+```
 
-- Prefer using `uv` for creating and running commands in the project environment.
-- If you need to install packages, use `uv add <package>` inside the project folder.
+## Built on
+
+MuJoCo (physics, allocation matrix from the model), SymPy (symbolic verification),
+cvxpy + Clarabel (LMIs), SciPy (rotations, ODE integration), joblib (parallel Monte Carlo),
+pandas, matplotlib, pytest.

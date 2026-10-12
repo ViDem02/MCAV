@@ -1,0 +1,52 @@
+# config/quadcopter.yaml
+# Vehicle physics (mass, inertia, motor geometry and limits) live in the MJCF
+# model only; this file holds the mission, the gains and the design choices.
+
+model_path: "models/quadcopter/quadcopter.xml"
+dt: 0.002            # physics and control period [s] (500 Hz)
+t_end: 40.0          # mission length [s]
+
+trajectory:          # p_d(t) = [R cos ωt, R sin ωt, z_d]
+  radius:   3.0
+  omega:    0.5
+  z_height: 3.0
+
+initial_state:       # at rest, level, heading tangent to the circle at t = 0
+  pos: [0.0, 0.0, 0.5]
+  yaw: 1.5707963267948966
+
+# Hand-tuned gains (used when the LMI design is not run).
+# Attitude: roll/pitch critically damped at 10 rad/s, kR = J_xy ωn², kw = 2 ζ ωn J_xy.
+controller:
+  kx: 1.0
+  ky: 1.0
+  kz: 1.5
+  kv: 4.0
+  kR: 0.35
+  kw: 0.07
+  saturate: false    # analysis assumes unbounded, signed motor forces
+
+# LMI gain synthesis (src/design/lmi_gains.py)
+design:
+  torque_reserve_per_motor: 1.5   # N of each motor's range reserved for torques
+  torque_split: [0.3, 0.3, 0.4]   # share of the reserve for |τx|/(4d), |τy|/(4d), |τz|/(4k_m)
+  pd_torque_fraction: 0.8         # share of each torque budget for the PD part (rest: gyro + feedforward)
+  accel_budget_xy: 3.0            # m/s² horizontal correction budget
+  min_position_envelope: 0.5      # m     envelope certified in addition to the mission start
+  min_velocity_envelope: 0.5      # m/s
+  min_attitude_envelope_deg: 10.0
+  min_rate_envelope: 0.5          # rad/s
+  alpha_max_position: 2.0         # 1/s  cap: keeps the position loop slower than the attitude loop
+  alpha_max_attitude: 20.0        # 1/s  cap: far below the 500 Hz control rate
+
+monte_carlo:
+  n: 500
+  max_offset: 2.0                 # m    initial position offset (uniform in a ball)
+  max_angle_deg: 175.0            #      initial attitude error (uniform angle, random axis)
+  t_end: 20.0                     # s
+  tol: 0.05                       # m    convergence threshold on ‖e_p‖
+  seed: 7
+
+path_following:
+  v_d:     0.5       # nominal path rate [rad/s] — same as trajectory.omega
+  k_gamma: 0.5       # along-track correction gain [rad/(s·m)]

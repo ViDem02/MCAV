@@ -1,0 +1,43 @@
+\begin{thebibliography}{7}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Bhat and Bernstein(2000)]{bhat2000topological}
+S.~P. Bhat and D.~S. Bernstein.
+\newblock A topological obstruction to continuous global stabilization of rotational motion and the unwinding phenomenon.
+\newblock \emph{Systems \& Control Letters}, 39\penalty0 (1):\penalty0 63--70, 2000.
+
+\bibitem[Boyd et~al.(1994)Boyd, El~Ghaoui, Feron, and Balakrishnan]{boyd1994lmi}
+S.~Boyd, L.~El~Ghaoui, E.~Feron, and V.~Balakrishnan.
+\newblock \emph{Linear Matrix Inequalities in System and Control Theory}.
+\newblock SIAM, 1994.
+
+\bibitem[Diamond and Boyd(2016)]{diamond2016cvxpy}
+S.~Diamond and S.~Boyd.
+\newblock {CVXPY}: A {Python}-embedded modeling language for convex optimization.
+\newblock \emph{Journal of Machine Learning Research}, 17\penalty0 (83):\penalty0 1--5, 2016.
+
+\bibitem[Khalil(2002)]{khalil2002nonlinear}
+H.~K. Khalil.
+\newblock \emph{Nonlinear Systems}.
+\newblock Prentice Hall, 3rd edition, 2002.
+
+\bibitem[Lee(2012)]{lee2012exponential}
+T.~Lee.
+\newblock Exponential stability of an attitude tracking control system on {SO(3)} for large-angle rotational maneuvers.
+\newblock \emph{Systems \& Control Letters}, 61\penalty0 (1):\penalty0 231--237, 2012.
+
+\bibitem[Lee et~al.(2010)Lee, Leok, and McClamroch]{lee2010geometric}
+T.~Lee, M.~Leok, and N.~H. McClamroch.
+\newblock Geometric tracking control of a quadrotor {UAV} on {SE(3)}.
+\newblock In \emph{49th IEEE Conference on Decision and Control}, pages 5420--5425, 2010.
+
+\bibitem[Todorov et~al.(2012)Todorov, Erez, and Tassa]{todorov2012mujoco}
+E.~Todorov, T.~Erez, and Y.~Tassa.
+\newblock {MuJoCo}: A physics engine for model-based control.
+\newblock In \emph{IEEE/RSJ International Conference on Intelligent Robots and Systems}, pages 5026--5033, 2012.
+
+\end{thebibliography}
