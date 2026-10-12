@@ -12,7 +12,7 @@ its 0–8 N range, and the stability analysis is checked by SymPy instead of bei
 | Symbolic identities verified | 21 |
 | Full reproduction | one command, about 2 minutes on a laptop |
 
-The technical report is in [`docs/report/`](docs/report/).
+The technical report is in [`report/`](report/) — `report.pdf`: project overview; `changes.pdf`: what changed and why, for readers with one control course; `changes_technical.pdf`: the same with full proofs and algorithms.
 
 ## Quickstart
 
@@ -26,7 +26,7 @@ uv run pytest                  # 29 tests: symbolic proofs, LMI certificates, cl
 uv run jupyter lab             # notebooks/ — final.ipynb is the guided walkthrough
 ```
 
-Build the report after `main.py` has run: `cd docs/report && latexmk -pdf report.tex`.
+Build the report after `main.py` has run: `cd report && latexmk -pdf report.tex changes.tex changes_technical.tex`.
 
 ## Layout
 

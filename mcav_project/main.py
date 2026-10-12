@@ -45,6 +45,34 @@ def _save(fig, name):
     plt.close(fig)
 
 
+def _plot_lmi_certificate(d: dict, cfg: dict) -> None:
+    """Certified ellipse of the x position loop, with a linear-model trajectory and its input."""
+    from scipy.linalg import expm
+    K = np.array([[-d["kv"] * d["k"], -d["kv"]]])
+    A_cl = np.array([[0.0, 1.0], [0.0, 0.0]]) + np.array([[0.0], [1.0]]) @ K
+    W, ubar = d["W"], d["ubar"]
+    p0 = np.asarray(cfg["initial_state"]["pos"])[0] - cfg["trajectory"]["radius"]     # e_p,x(0)
+    env = cfg["design"]
+    a, b = max(abs(p0), env["min_position_envelope"]), env["min_velocity_envelope"]
+    th = np.linspace(0, 2 * np.pi, 300)
+    ell = np.linalg.cholesky(W) @ np.vstack([np.cos(th), np.sin(th)])            # boundary of xᵀW⁻¹x = 1
+    t = np.linspace(0, 10, 400)
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.9))
+    ax[0].plot(ell[0], ell[1], color=C_REF, lw=1.4, label=r"certified set $\mathcal{E}$")
+    ax[0].plot([-a, a, a, -a, -a], [-b, -b, b, b, -b], color=C_ALT, ls="--", lw=1, label="design box")
+    for x0, c in [(np.array([p0, 0.0]), C_PD), (np.array([-a, -b]), "#e9a03b")]:
+        x = np.array([expm(A_cl * ti) @ x0 for ti in t])
+        ax[0].plot(x[:, 0], x[:, 1], color=c, lw=1.2)
+        ax[1].plot(t, (K @ x.T).ravel(), color=c, lw=1.2,
+                   label=fr"start $({x0[0]:.1f},\,{x0[1]:.1f})$")
+    ax[0].set_xlabel(r"$e_{p,x}$ [m]"); ax[0].set_ylabel(r"$e_{v,x}$ [m/s]"); ax[0].legend(fontsize=7)
+    ax[0].set_title("Position loop, x axis")
+    ax[1].axhline(ubar, color=C_ALT, ls=":"); ax[1].axhline(-ubar, color=C_ALT, ls=":")
+    ax[1].set_xlabel("t [s]"); ax[1].set_ylabel(r"$u = Kx$ [m/s$^2$]"); ax[1].legend(fontsize=7)
+    ax[1].set_title(r"Input stays within $\pm\bar u$")
+    _save(fig, "lmi_certificate")
+
+
 def _settling_time(df, tol=0.05):
     """First time after which ‖e_p‖ stays below tol."""
     above = df["e_norm"].to_numpy() >= tol
@@ -106,6 +134,7 @@ def main(quick: bool) -> None:
         # largest roll/pitch error (zero rate error) inside {V₂ < level}: Ψ = ½(g_y + g_z)(1 − cos θ)
         "certified_roll_deg": float(np.degrees(np.arccos(max(-1.0, 1 - level / (0.5 * (att["G"][1] + att["G"][2])))))),
     }
+    _plot_lmi_certificate(pos["x"], cfg)
     print(f"[2/5] LMI design in {summary['lmi']['solve_time_s']:.1f} s: "
           f"alpha_pos={[round(pos[a]['alpha'], 2) for a in 'xyz']}, alpha_att={np.round(att['alpha'], 2).tolist()}")
 
