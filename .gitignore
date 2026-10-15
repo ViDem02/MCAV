@@ -1,0 +1,5 @@
+private_report
+mcav_project/results
+mcav_project/src/.ipynb_checkpoints
+mcav_project/notebooks/.ipynb_checkpoints
+*.pyc
