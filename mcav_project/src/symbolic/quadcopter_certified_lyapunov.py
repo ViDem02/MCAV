@@ -4,8 +4,8 @@ src/symbolic/quadcopter_certified_lyapunov.py
 Symbolic stability analysis of the geometric cascade controller
 (src/control/cascade_controller.py, feedforward=True) on the full rigid-body model
 
-    ṗ = v,      m v̇ = T R e₃ − m g e₃,
-    Ṙ = R Ω̂,    J Ω̇ = τ − Ω × JΩ.
+    ṗ = v,      m v̇ = T R e₃ - m g e₃,
+    Ṙ = R Ω̂,    J Ω̇ = τ - Ω x JΩ.
 
 Every identity below is computed by SymPy from these equations and the
 control law; nothing is asserted by hand.  Each function returns the
@@ -17,8 +17,8 @@ What is proved (and what is not)
 1. derive_attitude_certificate():
      with the full Lee et al. torque law (weighted error, diagonal gains
      G, K_Ω) the attitude error obeys
-     J ė_Ω = −e_R − K_Ω e_Ω,  Ṙ_e = R_e ê_Ω  (autonomous), and
-     V₂ = Ψ + ½ e_Ωᵀ J e_Ω  has  V̇₂ = −e_Ωᵀ K_Ω e_Ω  exactly.
+     J ė_Ω = -e_R - K_Ω e_Ω,  Ṙ_e = R_e ê_Ω  (autonomous), and
+     V₂ = Ψ + ½ e_Ωᵀ J e_Ω  has  V̇₂ = -e_Ωᵀ K_Ω e_Ω  exactly.
      ⇒ (R_e, e_Ω) = (I, 0) is asymptotically stable and every initial
        condition with V₂ < min_{i≠j}(g_i + g_j) converges to it (LaSalle on
        a compact sublevel set that excludes all 180° equilibria).  Locally
@@ -28,8 +28,8 @@ What is proved (and what is not)
      counterexample returned).
 2. derive_position_certificate():
      the position/velocity error obeys ė_p = e_v,
-     ė_v = −K_v K e_p − K_v e_v + Δ  with  Δ = (T/m)(R − R_d)e₃,
-     ‖Δ‖ ≤ (2T/m)√Ψ₁,  Ψ₁ = ½ tr(I − R_e) ≤ Ψ / min g.  For Δ = 0 the system is linear, Hurwitz, and
+     ė_v = -K_v K e_p - K_v e_v + Δ  with  Δ = (T/m)(R - R_d)e₃,
+     ‖Δ‖ ≤ (2T/m)√Ψ₁,  Ψ₁ = ½ tr(I - R_e) ≤ Ψ / min g.  For Δ = 0 the system is linear, Hurwitz, and
      V₁ = xᵀPx (P from the Lyapunov equation) proves global exponential
      stability of THAT reduced system.
 3. derive_cascade_linearization():
@@ -49,6 +49,8 @@ steady-state circle, O(dt) during transients).
 """
 
 from __future__ import annotations
+from typing import Any
+
 import sympy as sp
 
 
@@ -56,12 +58,18 @@ import sympy as sp
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _el(M: sp.MatrixBase, i: int, j: int = 0) -> Any:
+    """Entry M[i, j]; typed Any because Pylance's bundled SymPy stubs reject arithmetic on Expr."""
+    return M[i, j]
+
+
 def hat(w: sp.Matrix) -> sp.Matrix:
-    """ŵ such that ŵ v = w × v."""
+    """ŵ such that ŵ v = w x v."""
+    wx, wy, wz = (_el(w, i) for i in range(3))
     return sp.Matrix([
-        [    0, -w[2],  w[1]],
-        [ w[2],     0, -w[0]],
-        [-w[1],  w[0],     0],
+        [  0, -wz,  wy],
+        [ wz,   0, -wx],
+        [-wy,  wx,   0],
     ])
 
 
@@ -71,7 +79,7 @@ def vee(S: sp.Matrix) -> sp.Matrix:
 
 def _is_zero(expr) -> bool:
     """True iff expr (scalar or matrix) simplifies to exactly zero."""
-    entries = list(expr) if isinstance(expr, sp.MatrixBase) else [expr]
+    entries = [e for row in expr.tolist() for e in row] if isinstance(expr, sp.MatrixBase) else [expr]
     return all(sp.expand(e) == 0 or sp.simplify(e) == 0 for e in entries)
 
 
@@ -89,23 +97,23 @@ def derive_attitude_certificate() -> dict:
     Exact Lyapunov analysis of the attitude error (R_e, e_Ω), R_e = R_dᵀR, with
     the weighted error of the controller:
 
-        Ψ = ½ tr(G (I − R_e)),   e_R = ½ vee(G R_e − R_eᵀ G),   G = diag(g) ≻ 0,
-        τ = −e_R − K_Ω e_Ω + Ω × JΩ − J (Ω̂ R_eᵀ Ω_d − R_eᵀ Ω̇_d),  K_Ω = diag ≻ 0.
+        Ψ = ½ tr(G (I - R_e)),   e_R = ½ vee(G R_e - R_eᵀ G),   G = diag(g) ≻ 0,
+        τ = -e_R - K_Ω e_Ω + Ω × JΩ - J (Ω̂ R_eᵀ Ω_d - R_eᵀ Ω̇_d),  K_Ω = diag ≻ 0.
 
     Kinematics.  From Ṙ = RΩ̂, Ṙ_d = R_dΩ̂_d and R ŵ Rᵀ = (Rw)^ on SO(3):
-        Ṙ_e = R_e ê_Ω,   e_Ω = Ω − R_eᵀΩ_d.
+        Ṙ_e = R_e ê_Ω,   e_Ω = Ω - R_eᵀΩ_d.
     The identity R ŵ Rᵀ = (Rw)^ is verified on the Euler–Rodrigues
     parametrisation; the remaining identities are verified for a generic
     3×3 matrix R_e, so they need no small-angle approximation.
 
     Critical points.  e_R = 0 ⇔ S = G R_e is symmetric ⇒ S² = S Sᵀ = G², which
     forces R_e = I or a rotation by π about some axis n (case analysis on the
-    eigenvalues of G).  At such a rotation Ψ = tr G − nᵀG n ≥ min_{i≠j}(g_i + g_j).
+    eigenvalues of G).  At such a rotation Ψ = tr G - nᵀG n ≥ min_{i≠j}(g_i + g_j).
     Hence on {V₂ < min_{i≠j}(g_i + g_j)} the only point with e_R = 0 is R_e = I.
     """
     # ── symbols ──────────────────────────────────────────────────────────────
     g = sp.symbols("g_1:4", positive=True)
-    kW = [sp.Symbol(rf"k_{{\Omega{i}}}", positive=True) for i in (1, 2, 3)]
+    kW = list(sp.symbols(r"k_{\Omega1} k_{\Omega2} k_{\Omega3}", positive=True))
     G, KW = sp.diag(*g), sp.diag(*kW)
     J1, J2, J3 = sp.symbols("J_1 J_2 J_3", positive=True)
     J = sp.diag(J1, J2, J3)
@@ -127,7 +135,7 @@ def derive_attitude_certificate() -> dict:
     check_orth = _is_zero(M * M.T - n2**2 * sp.eye(3))
 
     # ── error quantities ────────────────────────────────────────────────────
-    e_R  = sp.Rational(1, 2) * vee(G * Re - Re.T * G)
+    e_R  = vee(G * Re - Re.T * G) / 2
     Psi  = sp.Rational(1, 2) * (G * (sp.eye(3) - Re)).trace()
     e_W  = Om - Re.T * Omd
 
@@ -136,7 +144,7 @@ def derive_attitude_certificate() -> dict:
     Psi_dot = -sp.Rational(1, 2) * (G * Re_dot).trace()
     check_Psi_dot = _is_zero(Psi_dot - e_R.dot(e_W))
 
-    # ── ė_Ω  from Euler's equation and Ṙ_eᵀ = −ê_Ω R_eᵀ ─────────────────────
+    # ── ė_Ω  from Euler's equation and Ṙ_eᵀ = -ê_Ω R_eᵀ ─────────────────────
     def e_W_dot(tau):
         Om_dot = J.inv() * (tau - Om.cross(J * Om))
         return Om_dot - (Re_dot.T * Omd + Re.T * dOmd)
@@ -158,12 +166,12 @@ def derive_attitude_certificate() -> dict:
     # ── PD law only: residual and an explicit point where V̇₂ > 0 ───────────
     V2_dot_pd = sp.expand(V2_dot(tau_pd))
     residual_pd = sp.expand(V2_dot_pd + (e_W.T * KW * e_W)[0, 0])
-    # R_e = I, Ω_d = 0, Ω = e_Ω = (0.1,0,0), Ω̇_d = (−1000,0,0):
-    # residual = −e_Ωᵀ J Ω̇_d = 0.35 > k_Ω1‖e_Ω‖² = 0.025
-    numeric_point = {**{Re[i, j]: int(i == j) for i in range(3) for j in range(3)},
-                     Om[0]: sp.Rational(1, 10), Om[1]: 0, Om[2]: 0,
-                     **{Omd[i]: 0 for i in range(3)},
-                     dOmd[0]: -1000, dOmd[1]: 0, dOmd[2]: 0,
+    # R_e = I, Ω_d = 0, Ω = e_Ω = (0.1,0,0), Ω̇_d = (-1000,0,0):
+    # residual = -e_Ωᵀ J Ω̇_d = 0.35 > k_Ω1‖e_Ω‖² = 0.025
+    numeric_point = {**{_el(Re, i, j): int(i == j) for i in range(3) for j in range(3)},
+                     _el(Om, 0): sp.Rational(1, 10), _el(Om, 1): 0, _el(Om, 2): 0,
+                     **{_el(Omd, i): 0 for i in range(3)},
+                     _el(dOmd, 0): -1000, _el(dOmd, 1): 0, _el(dOmd, 2): 0,
                      J1: sp.Rational(35, 10000), J2: sp.Rational(35, 10000), J3: sp.Rational(6, 1000),
                      **{gi: sp.Rational(1, 2) for gi in g}, **{ki: sp.Rational(5, 2) for ki in kW}}
     V2_dot_pd_counterexample = V2_dot_pd.subs(numeric_point)
@@ -173,18 +181,18 @@ def derive_attitude_certificate() -> dict:
     regulation = {**{Omd[i]: 0 for i in range(3)}, **{dOmd[i]: 0 for i in range(3)}}
     check_pd_regulation = _is_zero(residual_pd.subs(regulation))
 
-    # ── Ψ at a rotation by π about a unit axis n: R = 2nnᵀ − I ──────────────
+    # ── Ψ at a rotation by π about a unit axis n: R = 2nnᵀ - I ──────────────
     n = sp.Matrix(sp.symbols("n_1:4", real=True))
     R_pi = 2 * n * n.T - sp.eye(3)
     Psi_pi = Psi.subs({Re[i, j]: R_pi[i, j] for i in range(3) for j in range(3)})
     check_Psi_pi = _is_zero(Psi_pi - (G.trace() - (n.T * G * n)[0, 0]))
-    # ⇒ for ‖n‖ = 1: Ψ(π-rotation) = tr G − nᵀGn ≥ tr G − max g = min_{i≠j}(g_i + g_j)
+    # ⇒ for ‖n‖ = 1: Ψ(π-rotation) = tr G - nᵀGn ≥ tr G - max g = min_{i≠j}(g_i + g_j)
 
     # ── S = G R symmetric ⇒ S² = G²  (uses only R Rᵀ = I) ───────────────────
     # S Sᵀ = G R Rᵀ G = G², and S = Sᵀ ⇒ S² = S Sᵀ.
     check_S2 = _is_zero((G * M) * (G * M).T - n2**2 * G * G)
 
-    # ── linearisation at (I, 0): R_e ≈ I + θ̂,  e_R ≈ ½(tr G·I − G) θ,  θ̇ ≈ e_Ω ──
+    # ── linearisation at (I, 0): R_e ≈ I + θ̂,  e_R ≈ ½(tr G·I - G) θ,  θ̇ ≈ e_Ω ──
     th = sp.Matrix(sp.symbols(r"\theta_1:4", real=True))
     e_R_lin = sp.Rational(1, 2) * vee(G * hat(th) + hat(th) * G)
     stiffness = sp.Rational(1, 2) * (G.trace() * sp.eye(3) - G)
@@ -229,7 +237,7 @@ def derive_attitude_certificate() -> dict:
 def derive_position_certificate() -> dict:
     """
     Translational error dynamics under
-        a_des = k_v(ṗ_d − K e_p − ṗ) + p̈_d,   F_des = m(a_des + g e₃) = T R_d e₃,
+        a_des = k_v(ṗ_d - K e_p - ṗ) + p̈_d,   F_des = m(a_des + g e₃) = T R_d e₃,
     with thrust T = ‖F_des‖ applied along the actual body axis R e₃.
     """
     m, g = sp.symbols("m g", positive=True)
@@ -244,18 +252,18 @@ def derive_position_certificate() -> dict:
     Re   = _generic_matrix("r")
     e3   = sp.Matrix([0, 0, 1])
 
-    a_des = -kv * K * e_p - kv * e_v + pdd                         # = K_v(ṗ_d − K e_p − ṗ) + p̈_d
+    a_des = -kv * K * e_p - kv * e_v + pdd                         # = K_v(ṗ_d - K e_p - ṗ) + p̈_d
     # R_d is built so that its third column is F_des / T
     Rd = Rd.copy()
     Rd[:, 2] = m * (a_des + g * e3) / T
-    acc   = (T / m) * Rd * Re * e3 - g * e3                         # v̇ = (T/m) R e₃ − g e₃,  R = R_d R_e
+    acc   = (T / m) * Rd * Re * e3 - g * e3                         # v̇ = (T/m) R e₃ - g e₃,  R = R_d R_e
     Delta = (T / m) * Rd * (Re - sp.eye(3)) * e3
     e_v_dot = acc - pdd
     check_error_dyn = _is_zero(e_v_dot - (-kv * K * e_p - kv * e_v + Delta))
 
-    # ‖(R_e − I)e₃‖² = 2 − 2 r₃₃  (R_e orthogonal)  and  4Ψ − that = 4 − 2r₁₁ − 2r₂₂ ≥ 0
+    # ‖(R_e - I)e₃‖² = 2 - 2 r₃₃  (R_e orthogonal)  and  4Ψ - that = 4 - 2r₁₁ - 2r₂₂ ≥ 0
     Psi = sp.Rational(1, 2) * (sp.eye(3) - Re).trace()
-    gap = sp.expand(4 * Psi - (2 - 2 * Re[2, 2]))
+    gap = sp.expand(4 * Psi - (2 - 2 * _el(Re, 2, 2)))
 
     # ── per-axis linear system  ẋ_i = A_i x_i,  x_i = (e_p,i, e_v,i) ─────────
     P_list, checks_P = [], []
@@ -277,7 +285,7 @@ def derive_position_certificate() -> dict:
         "char_poly": [sp.Symbol("s")**2 + kvi * sp.Symbol("s") + kvi * ki for ki, kvi in zip(k, kvs)],
         "checks": {
             "error_dynamics": check_error_dyn,
-            "Delta_bound_gap_is_4_minus_2r11_minus_2r22": _is_zero(gap - (4 - 2 * Re[0, 0] - 2 * Re[1, 1])),
+            "Delta_bound_gap_is_4_minus_2r11_minus_2r22": _is_zero(gap - (4 - 2 * _el(Re, 0, 0) - 2 * _el(Re, 1, 1))),
             "P_positive_definite_all_axes": all(checks_P),
         },
     }
@@ -291,8 +299,8 @@ def derive_cascade_linearization() -> dict:
     """
     State (x, ξ) with x = (e_p, e_v) ∈ ℝ⁶ and ξ = (θ, e_Ω) ∈ ℝ⁶, R_e = exp(θ̂).
     Exact closed loop:  ẋ = A x + Δ(t, x, R_e),   (Ṙ_e, ė_Ω) = f(R_e, e_Ω).
-    Linearising Δ = (T/m) R_d (R_e − I) e₃ at θ = 0 gives
-        Δ ≈ (T/m) R_d (θ̂ e₃) = −(T/m) R_d ê₃ θ  =: B(t) θ,
+    Linearising Δ = (T/m) R_d (R_e - I) e₃ at θ = 0 gives
+        Δ ≈ (T/m) R_d (θ̂ e₃) = -(T/m) R_d ê₃ θ  =: B(t) θ,
     so the Jacobian is block upper-triangular  [[A, [B(t) 0]], [0, A_ξ]].
     A and A_ξ are constant and Hurwitz; B(t) is bounded because along the
     reference T = m‖p̈_d + g e₃‖ ≥ m g > 0 is bounded.  Hence the

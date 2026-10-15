@@ -6,19 +6,19 @@ Headless experiments behind every number and figure of the report.
 load()                config/<name>.yaml with paths resolved
 simulate_quad()       closed-loop quadrotor in MuJoCo (circle or path following)
 roa_monte_carlo()     random initial positions/attitudes → convergence statistics
-simulate_unicycle()   kinematic unicycle with the Lyapunov path-following law
+render_quad()         replay a simulate_quad() run in MuJoCo's renderer → mp4
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import mujoco
 import numpy as np
 import pandas as pd
 import yaml
 from joblib import Parallel, delayed
-from scipy.integrate import solve_ivp
 from scipy.spatial.transform import Rotation
 
 from src.control.cascade_controller import GeometricController, circle_reference
@@ -54,6 +54,8 @@ def simulate_quad(
     R0: Rotation | None = None,
     stop_on_ground: bool = False,
 ) -> pd.DataFrame:
+
+    
     """One closed-loop run; one row per control step."""
     model = load_model(cfg)
     data = mujoco.MjData(model)
@@ -79,6 +81,7 @@ def simulate_quad(
         if not np.all(np.isfinite(data.ctrl)) or (stop_on_ground and data.qpos[2] < 0.05):
             break
         rows.append({"t": t, "x": data.qpos[0], "y": data.qpos[1], "z": data.qpos[2],
+                     **dict(zip(("qw", "qx", "qy", "qz"), data.qpos[3:7])),
                      "e_norm": float(np.linalg.norm(data.qpos[:3] - ref.pos)), **log})
         mujoco.mj_step(model, data)
     return pd.DataFrame(rows)
@@ -115,33 +118,62 @@ def roa_monte_carlo(cfg: dict, gains: dict | None = None, n: int | None = None, 
     offsets = unit(rng.normal(size=(n, 3))) * mc["max_offset"] * rng.uniform(size=(n, 1)) ** (1 / 3)
     rotvecs = unit(rng.normal(size=(n, 3))) * np.radians(mc["max_angle_deg"]) * rng.uniform(size=(n, 1))
     f_max = float(load_model(cfg).actuator_ctrlrange[:, 1].min())
-    rows = Parallel(n_jobs=n_jobs)(
-        delayed(_roa_rollout)(cfg, gains, offsets[i], rotvecs[i], mc, f_max) for i in range(n))
+    rows = cast(list[dict], Parallel(n_jobs=n_jobs)(        # joblib's return type is untyped
+        delayed(_roa_rollout)(cfg, gains, offsets[i], rotvecs[i], mc, f_max) for i in range(n)))
     return pd.DataFrame(rows)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Unicycle
-# ──────────────────────────────────────────────────────────────────────────────
+def _add_segment(scene: mujoco.MjvScene, a, b, rgba, width: float = 0.015) -> None:
+    if scene.ngeom < scene.maxgeom:
+        g = scene.geoms[scene.ngeom]
+        mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3), np.zeros(3), np.eye(3).ravel(), np.asarray(rgba, float))
+        mujoco.mjv_connector(g, mujoco.mjtGeom.mjGEOM_CAPSULE, width, np.asarray(a, float), np.asarray(b, float))
+        scene.ngeom += 1
 
-def simulate_unicycle(cfg: dict, n_points: int = 1500) -> pd.DataFrame:
-    """ẋ = v cos θ, ẏ = v sin θ, θ̇ = ω(e, θ̃) integrated with scipy's RK45."""
-    c, ic = cfg["control"], cfg["initial_state"]
-    v, R, ky, kth = c["v"], c["R"], c["ky"], c["ktheta"]
 
-    def errors(x, y, th):
-        e = np.hypot(x, y) - R
-        t_tilde = np.angle(np.exp(1j * (th - np.arctan2(y, x) - np.pi / 2)))
-        return e, t_tilde
+def render_quad(
+    cfg: dict,
+    df: pd.DataFrame,
+    path: str | Path,
+    fps: int = 30,
+    width: int = 960,
+    height: int = 540,
+    t_end: float | None = None,
+    distance: float = 3.5,
+) -> Path:
+    """
+    Replay the logged states of simulate_quad() (no new simulation) with a camera
+    tracking the vehicle; reference circle in grey, flown path in blue.
+    """
+    import imageio.v3 as iio
 
-    def rhs(_, s):
-        e, tt = errors(*s)
-        omega = v * np.cos(tt) / (R + e) + ky * e * v - kth * np.sin(tt)
-        return [v * np.cos(s[2]), v * np.sin(s[2]), omega]
+    model = load_model(cfg)
+    data = mujoco.MjData(model)
+    tr = cfg["trajectory"]
+    th = np.linspace(0, 2 * np.pi, 121)
+    circle = np.column_stack([tr["radius"] * np.cos(th), tr["radius"] * np.sin(th), np.full_like(th, tr["z_height"])])
+    t = df["t"].to_numpy()
+    idx = np.searchsorted(t, np.arange(0.0, min(t_end or t[-1], t[-1]), 1.0 / fps))
+    pos, quat = df[["x", "y", "z"]].to_numpy(), df[["qw", "qx", "qy", "qz"]].to_numpy()
 
-    t = np.linspace(0, cfg["t_end"], n_points)
-    sol = solve_ivp(rhs, (0, cfg["t_end"]), [ic["x"], ic["y"], ic["theta"]], t_eval=t, rtol=1e-9, atol=1e-9)
-    x, y, th = sol.y
-    e, tt = errors(x, y, th)
-    return pd.DataFrame({"t": t, "x": x, "y": y, "e": e, "t_tilde": tt,
-                         "V": 0.5 * e**2 + (1 - np.cos(tt)) / ky})
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    cam.trackbodyid = model.body("quad").id
+    cam.distance, cam.azimuth, cam.elevation = distance, -60.0, -20.0
+
+    frames = []
+    with mujoco.Renderer(model, height, width, max_geom=len(idx) + 500) as renderer:
+        for k, i in enumerate(idx):
+            data.qpos[:3], data.qpos[3:7] = pos[i], quat[i]
+            mujoco.mj_forward(model, data)
+            renderer.update_scene(data, cam)
+            for a, b in zip(circle[:-1], circle[1:]):
+                _add_segment(renderer.scene, a, b, (0.4, 0.4, 0.4, 0.6))
+            for a, b in zip(pos[idx[:k]], pos[idx[1:k + 1]]):
+                _add_segment(renderer.scene, a, b, (0.12, 0.37, 0.66, 1.0))
+            frames.append(renderer.render())
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    iio.imwrite(path, np.stack(frames), fps=fps, codec="libx264", macro_block_size=2)
+    return path

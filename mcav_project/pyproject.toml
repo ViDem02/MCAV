@@ -5,6 +5,7 @@ description = "Geometric cascade control of a quadrotor in MuJoCo, with symbolic
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "cvxpy>=1.9.3",
+    "imageio[ffmpeg]>=2.38.1",
     "ipykernel>=7.2.0",
     "joblib>=1.5.3",
     "jupyterlab>=4.5.7",
@@ -19,6 +20,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "black>=26.5.1",
+    "pybind11-stubgen>=3.0.0",
     "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]
+[tool.pyright]
+stubPath = "typings"

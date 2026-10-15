@@ -36,7 +36,7 @@ def derive_path_following() -> dict:
     p_d   = sp.Matrix([R * sp.cos(gamma), R * sp.sin(gamma), 0])
     dp_d  = p_d.diff(gamma)
     t_hat = sp.simplify(dp_d / R)
-    n_hat = sp.Matrix([-sp.cos(gamma), -sp.sin(gamma), 0])
+    n_hat = -p_d / R                                          # inward normal [-cos γ, -sin γ, 0]
 
     v_cmd   = dp_d * gamma_dot - K * e_p
     e_p_dot = sp.simplify(v_cmd - dp_d * gamma_dot)          # ṗ − ṗ_d with ṗ = v_cmd

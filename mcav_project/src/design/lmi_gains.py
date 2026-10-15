@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 import cvxpy as cp
 import numpy as np
+from cvxpy.constraints.constraint import Constraint
 
 DOUBLE_INTEGRATOR_A = np.array([[0.0, 1.0], [0.0, 0.0]])
 
@@ -43,24 +44,72 @@ class LMIDesign:
     ubar: float
 
 
-def _solve_alpha(A, B, ubar, X0, alpha, eps=1e-6):
+import numpy as np
+import numpy.typing as npt
+
+
+
+
+
+def _solve_alpha(
+    A: npt.NDArray[np.float64],
+    B: npt.NDArray[np.float64],
+    ubar: npt.NDArray[np.float64],
+    X0: npt.NDArray[np.float64],
+    alpha: float,
+    eps: float = 1e-6,
+) -> tuple[
+    bool,
+    npt.NDArray[np.float64] | None,
+    npt.NDArray[np.float64] | None,
+]:
     n, m = B.shape
+
     W = cp.Variable((n, n), symmetric=True)
     X = cp.Variable((m, n))
+
     M = A @ W + B @ X
-    cons = [W >> eps * np.eye(n), M + M.T << -2 * alpha * W]
+
+    cons: list[Constraint] = [
+        W >> eps * np.eye(n),
+        M + M.T << -2 * alpha * W,
+    ]
+
     for x0 in X0:
-        x0 = np.asarray(x0, float).reshape(n, 1)
-        cons.append(cp.bmat([[np.ones((1, 1)), x0.T], [x0, W]]) >> 0)
+        x0 = np.asarray(x0, dtype=np.float64).reshape(n, 1)
+        cons.append(
+            cp.bmat([
+                [np.ones((1, 1)), x0.T],
+                [x0, W],
+            ]) >> 0
+        )
+
     for i in range(m):
-        cons.append(cp.bmat([[np.array([[ubar[i] ** 2]]), X[i:i + 1, :]], [X[i:i + 1, :].T, W]]) >> 0)
+        cons.append(
+            cp.bmat([
+                [np.array([[ubar[i] ** 2]]), X[i:i+1, :]],
+                [X[i:i+1, :].T, W],
+            ]) >> 0
+        )
+
     prob = cp.Problem(cp.Minimize(0), cons)
+
     try:
         prob.solve(solver=cp.CLARABEL)
     except cp.SolverError:
         return False, None, None
-    ok = prob.status == cp.OPTIMAL
-    return ok, (W.value if ok else None), (X.value if ok else None)
+
+    if prob.status != cp.OPTIMAL:
+        return False, None, None
+
+    if W.value is None or X.value is None:
+        return False, None, None
+
+    return (
+        True,
+        np.asarray(W.value, dtype=np.float64),
+        np.asarray(X.value, dtype=np.float64),
+    )
 
 
 def fsf_input_bounded(A, B, ubar, X0, alpha_max: float = 50.0, tol: float = 1e-3) -> LMIDesign:
@@ -81,7 +130,8 @@ def fsf_input_bounded(A, B, ubar, X0, alpha_max: float = 50.0, tol: float = 1e-3
     ok, W, X = _solve_alpha(A, B, ubar, X0, lo)
     if not ok or lo <= 0:
         raise RuntimeError("No positive-rate design satisfies the input budget on the requested envelope.")
-    return LMIDesign(K=X @ np.linalg.inv(W), W=W, alpha=lo, ubar=float(ubar[0]))
+    return LMIDesign(K=X @ np.linalg.inv(W), W=W, alpha=lo, ubar=float(ubar[0]))  # type: ignore -> case 
+    # is handled by the previous condition. 
 
 
 def _box_vertices(a: float, b: float) -> list[np.ndarray]:

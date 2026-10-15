@@ -1,0 +1,9 @@
+{
+  "typeCheckingMode": "standard",
+  "stubPath": "mcav_project/typings",
+  "venvPath": "mcav_project",
+  "venv": ".venv",
+  "executionEnvironments": [
+    { "root": "mcav_project" }
+  ]
+}

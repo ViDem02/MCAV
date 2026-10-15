@@ -40,12 +40,12 @@ mcav_project/
 │   ├── design/lmi_gains.py        input-bounded LMI state-feedback synthesis (cvxpy)
 │   ├── symbolic/                  stability analysis, every identity verified by SymPy
 │   └── experiments.py             headless simulations and Monte Carlo (MuJoCo, joblib)
-├── notebooks/                     walkthrough, path following, unicycle
+├── notebooks/                     walkthrough, path following
 └── tests/                         pytest suite
 ```
 
 ## Built on
 
 MuJoCo (physics, allocation matrix from the model), SymPy (symbolic verification),
-cvxpy + Clarabel (LMIs), SciPy (rotations, ODE integration), joblib (parallel Monte Carlo),
+cvxpy + Clarabel (LMIs), SciPy (rotations), joblib (parallel Monte Carlo),
 pandas, matplotlib, pytest.

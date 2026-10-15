@@ -5,64 +5,37 @@
 ```text
 mcav_project/
 ├── config/
-│   ├── quadcopter_certified_circle.yaml
-│   ├── quadcopter_dynamic_circle.yaml
-│   ├── quadcopter_ff_circle.yaml
-│   ├── quadcopter_kinematic.yaml
-│   ├── quadcopter_lyapunov_circle.yaml
-│   ├── quadcopter_path_following_circle.yaml
-│   ├── quadcopter_saturated_circle.yaml
-│   ├── unicycle_circle.yaml
-│   ├── unicycle_fall_north.yaml
-│   └── unicycle_lyapunov.yaml
-├── figures/
-│   └── .gitignore
+│   ├── quadcopter.yaml
+│   └── unicycle.yaml
 ├── models/
-│   ├── quadcopter/
-│   │   ├── quadcopter.xml
-│   │   └── quadcopter_dynamic.xml
-│   └── unicycle/
-│       └── unicycle.xml
-├── notebooks/
-│   └── _lyapunov.md
+│   └── quadcopter/
+│       └── quadcopter.xml
+├── results/
+│   ├── monte_carlo.csv
+│   ├── numbers.tex
+│   └── summary.json
 ├── src/
 │   ├── control/
 │   │   ├── __init__.py
 │   │   ├── cascade_controller.py
-│   │   ├── certified_cascade_controller.py
 │   │   └── path_following_controller.py
-│   ├── logging/
+│   ├── design/
 │   │   ├── __init__.py
-│   │   └── sim_logger.py
-│   ├── multithreading/
-│   │   ├── __init__.py
-│   │   └── monte_carlo_roa.py
-│   ├── simulation/
-│   │   ├── __init__.py
-│   │   ├── base_sim.py
-│   │   ├── headless_sim.py
-│   │   ├── video_sim.py
-│   │   └── viewer_sim.py
+│   │   └── lmi_gains.py
 │   ├── symbolic/
-│   │   ├── kinematics.py
 │   │   ├── lyapunov.py
 │   │   ├── quadcopter_certified_lyapunov.py
-│   │   ├── quadcopter_dynamic_control.py
-│   │   ├── quadcopter_ff_dynamic_control.py
-│   │   ├── quadcopter_kinematic_lyapunov.py
 │   │   └── quadcopter_path_following.py
-│   ├── utils/
-│   │   ├── animations.py
-│   │   ├── config.py
-│   │   └── plotting.py
-│   └── vehicles/
-│       └── __init__.py
+│   └── experiments.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_closed_loop.py
+│   ├── test_lmi.py
+│   └── test_symbolic.py
 ├── .gitignore
-├── doc.md
 ├── main.py
-├── Project Structure.md
-├── pyproject.toml
-└── test_sim.py
+├── MUJOCO_LOG.TXT
+└── pyproject.toml
 ```
 
 ## File Contents
@@ -71,780 +44,385 @@ mcav_project/
 
 ```gitignore
 pedro_material
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+results/
 ```
 
-### `config/quadcopter_certified_circle.yaml`
+### `config/quadcopter.yaml`
 
 ```yaml
-# config/quadcopter_certified_circle.yaml
-# Identical physics to quadcopter_dynamic_circle.yaml.
-# The certification comes from the controller, not the config.
+# config/quadcopter.yaml
+# Vehicle physics (mass, inertia, motor geometry and limits) live in the MJCF
+# model only; this file holds the mission, the gains and the design choices.
 
-model_path: "models/quadcopter/quadcopter_dynamic.xml"
-dt: 0.002
-t_end: 60.0
+model_path: "models/quadcopter/quadcopter.xml"
+dt: 0.002            # physics and control period [s] (500 Hz)
+t_end: 40.0          # mission length [s]
 
-video_fps: 30
-video_path: "videos/quadcopter_certified_circle.mp4"
-video_w: 1280
-video_h: 720
-
-figures_dir: "figures/quadcopter_certified_circle"
-
-mass: 0.80
-arm_d: 0.1838
-km: 0.012
-max_thrust_per_motor: 4.0
-
-controller:
-  kx:   1.0
-  ky:   1.0
-  kz:   1.5
-  kpsi: 2.0
-  kv:   4.0
-  kR:   8.0
-  kw:   2.5
-  full_ff: false    # set true to also add inertial feedforward (non-constant trajectories)
-
-trajectory:
+trajectory:          # p_d(t) = [R cos ωt, R sin ωt, z_d]
   radius:   3.0
   omega:    0.5
   z_height: 3.0
 
-camera:
-  lookat:    [0.0, 0.0, 2.0]
-  distance:  12.0
-  elevation: -30.0
-  azimuth:   45.0
+initial_state:       # at rest, level, heading tangent to the circle at t = 0
+  pos: [0.0, 0.0, 0.5]
+  yaw: 1.5707963267948966
 
-multithreading:
-  n_samples: 10000
-  max_radius: 3.0
-  n_jobs: -1
-  t_max: 4.0
-  initial_altitude_error: 0.0
-  ground_clearance: 0.1
-  success_threshold: 0.05
-  seed: 7
-  show_progress: true
-```
-
-### `config/quadcopter_dynamic_circle.yaml`
-
-```yaml
-# config/quadcopter_dynamic_circle.yaml
-
-model_path: "models/quadcopter/quadcopter_dynamic.xml"
-dt: 0.002           # physics timestep → 500 Hz
-t_end: 60.0         # longer than kinematic: inner loop needs time to converge
-
-video_fps: 30
-video_path: "videos/quadcopter_dynamic_circle.mp4"
-video_w: 1280
-video_h: 720
-
-figures_dir: "figures/quadcopter_dynamic_circle"
-
-# vehicle physical parameters (must match the MJCF mass budget)
-mass: 0.80          # kg  (body 0.5 + arms 0.2 + props 0.1)
-arm_d: 0.1838       # m   = 0.13 * sqrt(2)  (moment arm for roll/pitch)
-km: 0.012           # reaction-torque / thrust ratio
-max_thrust_per_motor: 4.0   # N
-
-controller:
-  # outer loop — position Lyapunov (same as kinematic)
-  kx:   1.0
-  ky:   1.0
-  kz:   1.5
-  kpsi: 2.0
-
-  # middle loop — velocity tracking
-  kv: 4.0
-
-  # inner loop — geometric attitude (SO3)
-  kR: 8.0           # attitude-error gain
-  kw: 2.5           # angular-rate damping
-
-trajectory:
-  radius:   3.0     # m
-  omega:    0.5     # rad/s  (one lap ≈ 12.6 s)
-  z_height: 3.0     # m
-
-camera:
-  lookat:    [0.0, 0.0, 2.0]
-  distance:  12.0
-  elevation: -30.0
-  azimuth:   45.0
-```
-
-### `config/quadcopter_ff_circle.yaml`
-
-```yaml
-# config/quadcopter_ff_circle.yaml
-# Identical to quadcopter_dynamic_circle.yaml except:
-#   - figures_dir and video_path point to a separate ff folder
-#   - no gain changes: feedforward alone should reduce the error
-
-model_path: "models/quadcopter/quadcopter_dynamic.xml"
-dt: 0.002
-t_end: 25.0
-
-video_fps: 30
-video_path: "videos/quadcopter_ff_circle.mp4"
-video_w: 1280
-video_h: 720
-
-figures_dir: "figures/quadcopter_ff_circle"
-
-mass: 0.80
-arm_d: 0.1838
-km: 0.012
-max_thrust_per_motor: 4.0
-
-controller:
-  kx:   1.0
-  ky:   1.0
-  kz:   1.5
-  kpsi: 2.0
-  kv:   4.0
-  kR:   8.0
-  kw:   2.5
-
-trajectory:
-  radius:   3.0
-  omega:    0.5
-  z_height: 3.0
-
-camera:
-  lookat:    [0.0, 0.0, 2.0]
-  distance:  12.0
-  elevation: -30.0
-  azimuth:   45.0
-```
-
-### `config/quadcopter_kinematic.yaml`
-
-```yaml
-model_path: "models/quadcopter/quadcopter.xml"
-
-dt: 0.002
-t_end: 30.0
-
-video_fps: 15
-video_path: "videos/quadcopter_kinematic.mp4"
-video_w: 640
-video_h: 480
-
-camera:
-  lookat: [0.0, 0.0, 0.5]
-  distance: 8.0
-  elevation: -30.0
-  azimuth: 45.0
-```
-
-### `config/quadcopter_lyapunov_circle.yaml`
-
-```yaml
-model_path: "models/quadcopter/quadcopter.xml"
-video_path: "videos/quadcopter_lyapunov_circle.mp4"
-video_fps: 30
-dt: 0.002
-t_end: 20.0
-camera:
-  distance: 10.0
-  elevation: -30.0
-  azimuth: 45.0
-  lookat: [0.0, 0.0, 2.0]
+# Hand-tuned gains (used when the LMI design is not run).
+# Attitude: roll/pitch critically damped at 10 rad/s, kR = J_xy ωn², kw = 2 ζ ωn J_xy.
 controller:
   kx: 1.0
   ky: 1.0
-  kz: 1.0
-  kpsi: 1.0
-trajectory:
-  radius: 3.0
-  omega: 0.5
-  z_height: 3.0
-figures_dir: "figures/quadcopter_lyapunov_circle"
-```
+  kz: 1.5
+  kv: 4.0
+  kR: 0.35
+  kw: 0.07
+  saturate: false    # analysis assumes unbounded, signed motor forces
 
-### `config/quadcopter_path_following_circle.yaml`
+# LMI gain synthesis (src/design/lmi_gains.py)
+design:
+  torque_reserve_per_motor: 1.5   # N of each motor's range reserved for torques
+  torque_split: [0.3, 0.3, 0.4]   # share of the reserve for |τx|/(4d), |τy|/(4d), |τz|/(4k_m)
+  pd_torque_fraction: 0.8         # share of each torque budget for the PD part (rest: gyro + feedforward)
+  accel_budget_xy: 3.0            # m/s² horizontal correction budget
+  min_position_envelope: 0.5      # m     envelope certified in addition to the mission start
+  min_velocity_envelope: 0.5      # m/s
+  min_attitude_envelope_deg: 10.0
+  min_rate_envelope: 0.5          # rad/s
+  alpha_max_position: 2.0         # 1/s  cap: keeps the position loop slower than the attitude loop
+  alpha_max_attitude: 20.0        # 1/s  cap: far below the 500 Hz control rate
 
-```yaml
-# config/quadcopter_path_following_circle.yaml
+monte_carlo:
+  n: 500
+  max_offset: 2.0                 # m    initial position offset (uniform in a ball)
+  max_angle_deg: 175.0            #      initial attitude error (uniform angle, random axis)
+  t_end: 20.0                     # s
+  tol: 0.05                       # m    convergence threshold on ‖e_p‖
+  seed: 7
 
-model_path: "models/quadcopter/quadcopter_dynamic.xml"
-dt: 0.002
-t_end: 60.0           # longer: path following needs time to converge first, then circle
-
-video_fps: 30
-video_path: "videos/quadcopter_path_following_circle.mp4"
-video_w: 1280
-video_h: 720
-
-figures_dir: "figures/quadcopter_path_following_circle"
-
-# vehicle
-mass: 0.80
-arm_d: 0.1838
-km: 0.012
-max_thrust_per_motor: 4.0
-
-# cascade inner loop (same gains as certified notebook)
-controller:
-  kx:   1.0
-  ky:   1.0
-  kz:   1.5
-  kpsi: 2.0
-  kv:   4.0
-  kR:   8.0
-  kw:   2.5
-  saturate: true
-
-# path following outer loop
 path_following:
-  v_d:     2.0       # desired path speed [rad/s]  — same ω as trajectory tracking
-  k_gamma: 0.5       # along-track correction gain
-
-# trajectory for comparison
-trajectory:
-  radius:   3.0
-  omega:    2.0
-  z_height: 3.0
-
-camera:
-  lookat:    [0.0, 0.0, 2.0]
-  distance:  12.0
-  elevation: -30.0
-  azimuth:   45.0
+  v_d:     0.5       # nominal path rate [rad/s] — same as trajectory.omega
+  k_gamma: 0.5       # along-track correction gain [rad/(s·m)]
 ```
 
-### `config/quadcopter_saturated_circle.yaml`
+### `config/unicycle.yaml`
 
 ```yaml
-# config/quadcopter_saturated_circle.yaml
-# Identical to quadcopter_certified_circle.yaml except:
-#   - controller.saturate: true
-#   - figures_dir and video_path point to a separate folder
-
-model_path: "models/quadcopter/quadcopter_dynamic.xml"
-dt: 0.002
-t_end: 25.0
-
-video_fps: 30
-video_path: "videos/quadcopter_saturated_circle.mp4"
-video_w: 1280
-video_h: 720
-
-figures_dir: "figures/quadcopter_saturated_circle"
-
-mass: 0.80
-arm_d: 0.1838
-km: 0.012
-max_thrust_per_motor: 4.0
-
-controller:
-  kx:   1.0
-  ky:   1.0
-  kz:   1.5
-  kpsi: 2.0
-  kv:   4.0
-  kR:   8.0
-  kw:   2.5
-  saturate: true       # ← only difference
-
-trajectory:
-  radius:   3.0
-  omega:    0.5
-  z_height: 3.0
-
-camera:
-  lookat:    [0.0, 0.0, 2.0]
-  distance:  12.0
-  elevation: -30.0
-  azimuth:   45.0
-```
-
-### `config/unicycle_circle.yaml`
-
-```yaml
-model_path: "models/unicycle/unicycle.xml"
-
-dt: 0.005
-t_end: 10.0
-
-video_fps: 30
-video_path: "videos/unicycle_circle.mp4"
-video_w: 640
-video_h: 480
-
-control:
-  k1: 1.0
-  k2: 2.0
-  lookahead: 0.5
-```
-
-### `config/unicycle_fall_north.yaml`
-
-```yaml
-model_path: "models/unicycle/unicycle.xml"
-
-dt: 0.005
-# Shorter run for drop + 1 m north motion.
-t_end: 4.0
-
-video_fps: 30
-video_path: "videos/unicycle_fall_north.mp4"
-video_w: 640
-video_h: 480
-
-control:
-  k1: 1.0
-  k2: 2.0
-  lookahead: 0.5
-```
-
-### `config/unicycle_lyapunov.yaml`
-
-```yaml
-model_path: "models/unicycle/unicycle.xml"
-
-dt: 0.005
+# config/unicycle.yaml — kinematic unicycle, Lyapunov path following on a circle
 t_end: 15.0
 
-video_fps: 30
-video_path: "videos/unicycle_lyapunov.mp4"
-video_w: 640
-video_h: 480
-
 control:
-  v: 1.0
-  R: 1.5
+  v: 1.0          # constant forward speed [m/s]
+  R: 1.5          # circle radius [m]
   ky: 1.0
   ktheta: 2.0
 
-camera:
-  lookat:    [0.0, 0.0, 0.0]
-  distance:  10.0          # increase until full circle fits
-  elevation: -70.0         # negative = looking steeply downward
-  azimuth:   90.0          # compass direction of the camera
-```
-
-### `doc.md`
-
-```markdown
-# Lyapunov Stability Analysis — Theoretical Foundation
-
-## 1. Lyapunov Stability Theory
-
-### 1.1 Definitions
-
-Consider an autonomous dynamical system
-
-$$\dot{\mathbf{x}} = f(\mathbf{x}), \quad \mathbf{x} \in \mathbb{R}^n, \quad f(\mathbf{0}) = \mathbf{0}$$
-
-where the origin $\mathbf{x} = \mathbf{0}$ is an equilibrium point. The equilibrium is said to be:
-
-- **Stable (Lyapunov):** for every $\varepsilon > 0$ there exists $\delta > 0$ such that $\|\mathbf{x}(0)\| < \delta \Rightarrow \|\mathbf{x}(t)\| < \varepsilon$ for all $t \geq 0$.
-- **Asymptotically Stable (AS):** stable and $\mathbf{x}(t) \to \mathbf{0}$ as $t \to \infty$.
-- **Globally Asymptotically Stable (GAS):** asymptotically stable for all initial conditions $\mathbf{x}(0) \in \mathbb{R}^n$.
-
-### 1.2 Lyapunov's Direct Method
-
-A continuously differentiable function $V : \mathbb{R}^n \to \mathbb{R}$ is a **Lyapunov function candidate** if:
-
-$$V(\mathbf{0}) = 0, \quad V(\mathbf{x}) > 0 \quad \forall\, \mathbf{x} \neq \mathbf{0}$$
-
-Its time derivative along trajectories of the system is:
-
-$$\dot{V}(\mathbf{x}) = \nabla V(\mathbf{x})^\top f(\mathbf{x}) = \frac{\partial V}{\partial \mathbf{x}} f(\mathbf{x})$$
-
-**Theorem (Lyapunov's Direct Method):**  
-If there exists a Lyapunov function candidate $V$ such that:
-
-$$\dot{V}(\mathbf{x}) < 0 \quad \forall\, \mathbf{x} \neq \mathbf{0}$$
-
-then the origin is **asymptotically stable**. If additionally $V$ is **radially unbounded**:
-
-$$V(\mathbf{x}) \to \infty \quad \text{as} \quad \|\mathbf{x}\| \to \infty$$
-
-then the origin is **globally asymptotically stable**.
-
-The geometric intuition is that $V$ measures the "energy" of the system. A strictly negative $\dot{V}$ means the energy is always decreasing — the system must converge to the only state of zero energy, the equilibrium.
-
-### 1.3 LaSalle's Invariance Principle
-
-LaSalle extends Lyapunov's theorem to cases where $\dot{V} \leq 0$ (negative **semi**-definite), which is insufficient for direct application of the theorem above.
-
-**Theorem (LaSalle):**  
-Let $\Omega$ be a compact set that is positively invariant with respect to $\dot{\mathbf{x}} = f(\mathbf{x})$. Let $V : \Omega \to \mathbb{R}$ be continuously differentiable with $\dot{V}(\mathbf{x}) \leq 0$ on $\Omega$. Define:
-
-$$\mathcal{S} = \left\{ \mathbf{x} \in \Omega \;\middle|\; \dot{V}(\mathbf{x}) = 0 \right\}$$
-
-Let $\mathcal{M}$ be the **largest invariant set** contained in $\mathcal{S}$. Then every solution starting in $\Omega$ converges to $\mathcal{M}$ as $t \to \infty$.
-
-If $\mathcal{M} = \{\mathbf{0}\}$ and $V$ is radially unbounded, the origin is GAS.
-
-LaSalle is particularly useful when cross-terms appear in $\dot{V}$ that make it only negative semi-definite — a common occurrence in cascade systems.
-
----
-
-## 2. Tier 1 — Kinematic Outer Loop
-
-### 2.1 System Model
-
-The kinematic simulator directly implements $\dot{\mathbf{x}} = \mathbf{u}$ by writing to `qpos` and `qvel` at each step. There is no inner loop, no rigid-body dynamics, and no separation assumption. The control input is the commanded velocity:
-
-$$\mathbf{u} = \mathbf{v}_\text{cmd} = \mathbf{v}_d - K \mathbf{e}_p$$
-
-where $\mathbf{e}_p = \mathbf{x} - \mathbf{x}_d \in \mathbb{R}^4$ is the error vector $[e_x, e_y, e_z, e_\psi]^\top$ and $K = \mathrm{diag}(k_x, k_y, k_z, k_\psi)$ with all $k_i > 0$.
-
-The error dynamics are therefore:
-
-$$\dot{\mathbf{e}}_p = \dot{\mathbf{x}} - \dot{\mathbf{x}}_d = \mathbf{u} - \mathbf{v}_d = -K\mathbf{e}_p$$
-
-This is a **linear, decoupled, first-order system**. Each component satisfies $\dot{e}_i = -k_i e_i$, with the known solution $e_i(t) = e_i(0)e^{-k_i t} \to 0$.
-
-### 2.2 Lyapunov Candidate
-
-Choose the standard quadratic energy function:
-
-$$V_1(\mathbf{e}_p) = \frac{1}{2}\mathbf{e}_p^\top \mathbf{e}_p = \frac{1}{2}\|\mathbf{e}_p\|^2$$
-
-**Positive Definiteness:** $V_1(\mathbf{0}) = 0$ and $V_1(\mathbf{e}_p) > 0$ for all $\mathbf{e}_p \neq \mathbf{0}$. ✓  
-**Radial Unboundedness:** $V_1 \to \infty$ as $\|\mathbf{e}_p\| \to \infty$. ✓
-
-### 2.3 Time Derivative
-
-$$\dot{V}_1 = \nabla V_1^\top \dot{\mathbf{e}}_p = \mathbf{e}_p^\top (-K\mathbf{e}_p) = -\mathbf{e}_p^\top K \mathbf{e}_p$$
-
-Since $K = \mathrm{diag}(k_i)$ with all $k_i > 0$:
-
-$$\dot{V}_1 = -k_x e_x^2 - k_y e_y^2 - k_z e_z^2 - k_\psi e_\psi^2 < 0 \quad \forall\, \mathbf{e}_p \neq \mathbf{0}$$
-
-**Negative Definiteness:** $\dot{V}_1$ is a negative definite quadratic form. ✓
-
-### 2.4 LaSalle Application
-
-The set where $\dot{V}_1 = 0$ is:
-
-$$\mathcal{S} = \left\{ \mathbf{e}_p : k_x e_x^2 + k_y e_y^2 + k_z e_z^2 + k_\psi e_\psi^2 = 0 \right\} = \{\mathbf{0}\}$$
-
-The largest invariant set $\mathcal{M} \subseteq \mathcal{S}$ is trivially $\mathcal{M} = \{\mathbf{0}\}$.
-
-Since $\dot{V}_1$ is already strictly negative definite, LaSalle is redundant here but confirms the result: all trajectories converge to $\mathcal{M} = \{\mathbf{0}\}$.
-
-### 2.5 Conclusion
-
-By Lyapunov's Direct Method and the radial unboundedness of $V_1$:
-
-$$\boxed{\mathbf{e}_p(t) \to \mathbf{0} \text{ as } t \to \infty \quad \forall\, \mathbf{e}_p(0) \in \mathbb{R}^4 \qquad \textbf{(GAS)}}$$
-
-No caveats. No assumptions. No inner loop. This is the strongest possible certificate.
-
----
-
-## 3. Tier 2 — Attitude Inner Loop
-
-### 3.1 Attitude Error on SO(3)
-
-The attitude of the vehicle is represented by a rotation matrix $R \in SO(3)$, the Lie group of $3\times3$ orthogonal matrices with determinant $+1$. The desired attitude is $R_d \in SO(3)$, computed from the desired thrust vector and yaw.
-
-The **attitude tracking error** is defined on $SO(3)$ as (Lee et al. 2010, eq. 7):
-
-$$\mathbf{e}_R = \frac{1}{2}\,\mathrm{vee}\!\left(R_d^\top R - R^\top R_d\right) \in \mathbb{R}^3$$
-
-where $\mathrm{vee}(\cdot)$ extracts the axial vector from a skew-symmetric matrix. This error is zero if and only if $R = R_d$.
-
-The **angular velocity error** is:
-
-$$\mathbf{e}_\Omega = \boldsymbol{\Omega} - R^\top R_d \boldsymbol{\Omega}_d \in \mathbb{R}^3$$
-
-where $\boldsymbol{\Omega}$ is the current angular velocity in the body frame and $\boldsymbol{\Omega}_d = [0, 0, \dot{\psi}_d]^\top$.
-
-### 3.2 Lyapunov Candidate for Attitude
-
-Following Lee et al. (2010, eq. 9), define:
-
-$$V_2(\mathbf{e}_R, \mathbf{e}_\Omega) = k_R\,\Psi(R, R_d) + \frac{1}{2}\mathbf{e}_\Omega^\top J\, \mathbf{e}_\Omega$$
-
-where $\Psi(R, R_d) = \frac{1}{2}\mathrm{tr}(I - R_d^\top R)$ is the **attitude tracking function** on $SO(3)$, a metric-like quantity that is zero when $R = R_d$ and positive otherwise.
-
-Near the equilibrium, $\Psi \approx \frac{1}{4}\|\mathbf{e}_R\|^2$ (Lee et al. Lemma 1), giving the quadratic approximation:
-
-$$V_2 \approx \frac{k_R}{4}\|\mathbf{e}_R\|^2 + \frac{1}{2}\mathbf{e}_\Omega^\top J\, \mathbf{e}_\Omega$$
-
-**Positive Definiteness:** Both terms are non-negative; they vanish simultaneously only when $\mathbf{e}_R = \mathbf{0}$ and $\mathbf{e}_\Omega = \mathbf{0}$. Since $k_R > 0$ and $J \succ 0$ (physically), $V_2$ is positive definite. ✓
-
-### 3.3 The Broken Controller — Why the Certificate Fails
-
-The naive torque law, without any physics-based cancellation:
-
-$$\boldsymbol{\tau}_\text{broken} = -k_R\, \mathbf{e}_R - k_w\, \mathbf{e}_\Omega$$
-
-The rigid-body angular dynamics are governed by Euler's equation:
-
-$$J\dot{\boldsymbol{\Omega}} = \boldsymbol{\tau} - \boldsymbol{\Omega} \times J\boldsymbol{\Omega}$$
-
-Substituting the broken torque law:
-
-$$J\dot{\boldsymbol{\Omega}} = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega - \boldsymbol{\Omega} \times J\boldsymbol{\Omega}$$
-
-The time derivative of $V_2$ along these dynamics includes a term from the Coriolis/gyroscopic contribution:
-
-$$\dot{V}_2\big|_\text{broken} = \frac{k_R}{2}\mathbf{e}_R^\top\mathbf{e}_\Omega - k_R\,\mathbf{e}_\Omega^\top\mathbf{e}_R - k_w\|\mathbf{e}_\Omega\|^2 + \mathbf{e}_\Omega^\top J^{-1}(\boldsymbol{\Omega}\times J\boldsymbol{\Omega}) + \cdots$$
-
-The cross-terms $\mathbf{e}_R^\top \mathbf{e}_\Omega$ do **not** cancel. The result is:
-
-$$\dot{V}_2\big|_\text{broken} = -\frac{k_R}{2}\mathbf{e}_R^\top\mathbf{e}_\Omega - k_w\|\mathbf{e}_\Omega\|^2 + (\text{gyroscopic residual})$$
-
-This expression is **not negative definite**. By Sylvester's criterion, for the quadratic part to be ND we would need $k_w > k_R^2/(4k_w)$, a constraint that the gains may or may not satisfy. More critically, the gyroscopic residual $\boldsymbol{\Omega} \times J\boldsymbol{\Omega}$ grows quadratically with $\|\boldsymbol{\Omega}\|$ and can overpower the damping terms during aggressive manoeuvres. **The certificate is broken.**
-
-### 3.4 The Certified Controller — Gyroscopic Cancellation
-
-Add the gyroscopic term to the torque law (Lee et al. 2010, eq. 16):
-
-$$\boldsymbol{\tau}_\text{cert} = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega + \boldsymbol{\Omega} \times J\boldsymbol{\Omega}$$
-
-The angular dynamics become:
-
-$$J\dot{\boldsymbol{\Omega}} = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega + \boldsymbol{\Omega}\times J\boldsymbol{\Omega} - \boldsymbol{\Omega}\times J\boldsymbol{\Omega} = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega$$
-
-The gyroscopic term in the torque **exactly cancels** the gyroscopic term in Euler's equation. The angular error dynamics simplify to:
-
-$$J\dot{\mathbf{e}}_\Omega \approx -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega$$
-
-Now the time derivative of $V_2$ is (Lee et al. 2010, eq. 14):
-
-$$\dot{V}_2\big|_\text{cert} = k_R\,\mathbf{e}_R^\top\dot{\mathbf{e}}_R + \mathbf{e}_\Omega^\top J\,\dot{\mathbf{e}}_\Omega$$
-
-Using the SO(3) kinematics $\dot{\mathbf{e}}_R \approx \mathbf{e}_\Omega$ near equilibrium and the simplified angular dynamics:
-
-$$\dot{V}_2\big|_\text{cert} = k_R\,\mathbf{e}_R^\top\mathbf{e}_\Omega + \mathbf{e}_\Omega^\top(-k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega)$$
-
-$$= k_R\,\mathbf{e}_R^\top\mathbf{e}_\Omega - k_R\,\mathbf{e}_\Omega^\top\mathbf{e}_R - k_w\|\mathbf{e}_\Omega\|^2$$
-
-$$= -k_w\|\mathbf{e}_\Omega\|^2 \leq 0$$
-
-**Negative Semi-Definiteness:** $\dot{V}_2\big|_\text{cert} \leq 0$. ✓ (zero only when $\mathbf{e}_\Omega = \mathbf{0}$)
-
-### 3.5 LaSalle for the Attitude Loop
-
-Since $\dot{V}_2$ is only **negative semi-definite** (not ND — it is zero whenever $\mathbf{e}_\Omega = \mathbf{0}$ regardless of $\mathbf{e}_R$), we must invoke LaSalle.
-
-The set where $\dot{V}_2 = 0$:
-
-$$\mathcal{S}_\text{att} = \left\{(\mathbf{e}_R, \mathbf{e}_\Omega) : k_w\|\mathbf{e}_\Omega\|^2 = 0\right\} = \left\{(\mathbf{e}_R, \mathbf{0})\right\}$$
-
-Now we find the **largest invariant set** $\mathcal{M}_\text{att} \subseteq \mathcal{S}_\text{att}$. On $\mathcal{S}_\text{att}$ we have $\mathbf{e}_\Omega = \mathbf{0}$ and therefore $\dot{\mathbf{e}}_\Omega = \mathbf{0}$. From the angular error dynamics:
-
-$$J\dot{\mathbf{e}}_\Omega = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega = -k_R\,\mathbf{e}_R = \mathbf{0}$$
-
-Since $k_R > 0$, this requires $\mathbf{e}_R = \mathbf{0}$. Therefore:
-
-$$\mathcal{M}_\text{att} = \left\{(\mathbf{0}, \mathbf{0})\right\}$$
-
-By LaSalle's Invariance Principle, all bounded trajectories converge to $\mathcal{M}_\text{att}$.
-
-### 3.6 Why the Remaining Feedforward Vanishes
-
-The full Lee et al. torque law (eq. 17) also includes an inertial feedforward:
-
-$$\boldsymbol{\tau}_\text{full} = -k_R\,\mathbf{e}_R - k_w\,\mathbf{e}_\Omega + \boldsymbol{\Omega}\times J\boldsymbol{\Omega} - J\!\left(\hat{\boldsymbol{\Omega}}\,R^\top R_d\,\boldsymbol{\Omega}_d - R^\top R_d\,\dot{\boldsymbol{\Omega}}_d\right)$$
-
-For a circular trajectory with constant angular rate $\omega$:
-
-$$\boldsymbol{\Omega}_d = \begin{bmatrix}0 \\ 0 \\ \omega\end{bmatrix} = \text{const} \quad \Rightarrow \quad \dot{\boldsymbol{\Omega}}_d = \mathbf{0}$$
-
-The second term in the feedforward vanishes. The first term becomes $J\hat{\boldsymbol{\Omega}}R^\top R_d[0,0,\omega]^\top$, which at small attitude error ($R \approx R_d$) is small and second-order in $\|\mathbf{e}_R\|$. For the purpose of the primary certificate the gyroscopic cancellation alone is sufficient.
-
----
-
-## 4. Combined Cascade Lyapunov Function
-
-### 4.1 Construction
-
-Define the **total Lyapunov function** as the sum of the outer and inner loop candidates:
-
-$$V_\text{total}(\mathbf{e}_p, \mathbf{e}_R, \mathbf{e}_\Omega) = V_1(\mathbf{e}_p) + V_2(\mathbf{e}_R, \mathbf{e}_\Omega)$$
-
-$$= \frac{1}{2}\|\mathbf{e}_p\|^2 + \frac{k_R}{4}\|\mathbf{e}_R\|^2 + \frac{1}{2}\mathbf{e}_\Omega^\top J\,\mathbf{e}_\Omega$$
-
-**Positive Definiteness:** Sum of two PD functions. ✓  
-**Radial Unboundedness:** Both $\|\mathbf{e}_p\|^2$ and $\mathbf{e}_\Omega^\top J\mathbf{e}_\Omega$ grow without bound. ✓
-
-### 4.2 Time Derivative
-
-Under the certified controller and time-scale separation:
-
-$$\dot{V}_\text{total} = \dot{V}_1 + \dot{V}_2 = -\mathbf{e}_p^\top K\mathbf{e}_p - k_w\|\mathbf{e}_\Omega\|^2$$
-
-$$= -k_x e_x^2 - k_y e_y^2 - k_z e_z^2 - k_\psi e_\psi^2 - k_w\|\mathbf{e}_\Omega\|^2 \leq 0$$
-
-**Negative Semi-Definiteness:** Zero only when $\mathbf{e}_p = \mathbf{0}$ and $\mathbf{e}_\Omega = \mathbf{0}$. ✓
-
-### 4.3 LaSalle for the Full Cascade
-
-The set where $\dot{V}_\text{total} = 0$:
-
-$$\mathcal{S} = \left\{ \mathbf{e}_p = \mathbf{0} \right\} \cap \left\{ \mathbf{e}_\Omega = \mathbf{0} \right\}$$
-
-On $\mathcal{S}$: $\mathbf{e}_p = \mathbf{0}$, so $\dot{\mathbf{e}}_p = -K\mathbf{e}_p = \mathbf{0}$ (consistent). Also $\mathbf{e}_\Omega = \mathbf{0}$, so $\dot{\mathbf{e}}_\Omega = \mathbf{0}$, requiring $\mathbf{e}_R = \mathbf{0}$ (from the attitude dynamics). Therefore:
-
-$$\mathcal{M} = \left\{(\mathbf{0}, \mathbf{0}, \mathbf{0})\right\}$$
-
-By LaSalle, all trajectories converge to the origin of the full error space.
-
-### 4.4 Conclusion
-
-$$\boxed{V_\text{total} > 0,\quad \dot{V}_\text{total} \leq 0,\quad \mathcal{M} = \{\mathbf{0}\},\quad V_\text{total} \to \infty \quad \Longrightarrow \quad \textbf{Full cascade is GAS}}$$
-
----
-
-## 5. Saturation and the Region of Attraction
-
-### 5.1 How Saturation Breaks the Certificate
-
-Physical motors are bounded: $f_i \in [0, f_{\max}]$. When the allocation matrix produces $f_i > f_{\max}$ or $f_i < 0$, the force is clamped. At the moment of clamping:
-
-$$\mathbf{f}_\text{actual} = \text{clip}(\mathbf{f}_\text{desired}, 0, f_{\max}) \neq \mathbf{f}_\text{desired}$$
-
-The actual torque applied to the vehicle is no longer $\boldsymbol{\tau}_\text{cert}$ — it is some reduced version. The gyroscopic cancellation is incomplete, the cross-terms in $\dot{V}_2$ no longer vanish, and the position control action is weakened. There is no guarantee that $\dot{V}_\text{total} \leq 0$.
-
-Formally, the saturated system is equivalent to the certified system **only within the set**:
-
-$$\mathcal{D} = \left\{ (\mathbf{e}_p, \mathbf{e}_R, \mathbf{e}_\Omega) \;\middle|\; \forall\, i:\; 0 \leq f_i(\mathbf{e}_p, \mathbf{e}_R, \mathbf{e}_\Omega) \leq f_{\max} \right\}$$
-
-Inside $\mathcal{D}$ the control law is identical to the certified one and the Lyapunov proof holds. Outside $\mathcal{D}$ the proof fails and the trajectory may diverge.
-
-### 5.2 Region of Attraction
-
-The **Region of Attraction** (ROA) is the largest set $\mathcal{R} \subseteq \mathcal{D}$ from which all trajectories still converge to the origin. It satisfies:
-
-$$\mathcal{R} \subseteq \mathcal{D}, \quad \mathbf{x}(0) \in \mathcal{R} \Rightarrow \mathbf{x}(t) \to \mathbf{0}$$
-
-A **sufficient** condition for $\mathcal{R}$ is any compact sub-level set of $V_\text{total}$ contained in $\mathcal{D}$:
-
-$$\mathcal{R}_c = \left\{ \mathbf{x} : V_\text{total}(\mathbf{x}) \leq c \right\} \subseteq \mathcal{D}$$
-
-Since $V_\text{total}$ is PD and $\dot{V}_\text{total} \leq 0$ inside $\mathcal{D}$, the set $\mathcal{R}_c$ is positively invariant — once inside, the trajectory cannot leave. The ROA can therefore be estimated by finding the largest $c$ such that $\mathcal{R}_c \subseteq \mathcal{D}$.
-
-In the notebook this is estimated empirically via Monte Carlo: initial conditions are sampled uniformly in the error space, and each is labelled as converging or diverging. The boundary between the two regions approximates $\partial\mathcal{R}$.
-
-### 5.3 The Stability Degradation Hierarchy
-
-$$\underbrace{\text{No saturation}}_{\text{idealised}} \Rightarrow \text{GAS (global)} \qquad\qquad \underbrace{\text{With saturation}}_{\text{physical}} \Rightarrow \text{AS within } \mathcal{R}$$
-
-The gap between these two is exactly what Control Barrier Functions (CBFs) and anti-windup schemes are designed to bridge — they reshape the control law to prevent saturation while preserving as much of the ROA as possible. This is left as a future extension.
-```
-
-### `figures/.gitignore`
-
-```gitignore
-# Ignora tutti i PDF
-*.pdf
-
-# Ignora tutte le immagini PNG
-*.png
+initial_state:    # outside the certified set V < R²/2 (see src/symbolic/lyapunov.py)
+  x: 3.0
+  y: 0.0
+  theta: 2.356194490192345   # 3π/4
 ```
 
 ### `main.py`
 
 ```python
-def main():
-    print("Hello from mcav-project!")
+"""
+main.py — reproduce every result of the report with one command.
+
+    uv run python main.py            # full run  (~2 min on a laptop)
+    uv run python main.py --quick    # smaller Monte Carlo (~30 s)
+
+Steps
+  1. symbolic verification of the stability analysis (SymPy)
+  2. LMI synthesis of actuator-aware gains (cvxpy / Clarabel)
+  3. nominal mission: full geometric law vs PD-only law, LMI gains vs paper gains
+  4. Monte Carlo over initial positions and attitudes
+  5. unicycle path following
+Outputs go to results/: summary.json, numbers.tex (LaTeX macros used by the
+report) and figures/*.pdf|png.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+from src.design.lmi_gains import design_cascade_gains
+from src.experiments import load, load_model, roa_monte_carlo, simulate_quad, simulate_unicycle
+from src.symbolic.lyapunov import derive_circular_path_following
+from src.symbolic.quadcopter_certified_lyapunov import run_all_checks
+from src.symbolic.quadcopter_path_following import derive_path_following
+
+ROOT = Path(__file__).resolve().parent
+OUT = ROOT / "results"
+FIG = OUT / "figures"
+C_REF, C_PD, C_ALT, C_OK, C_BAD = "#1f5fa8", "#d1495b", "#8a8a8a", "#2a9d8f", "#d1495b"
+
+
+def _save(fig, name):
+    fig.tight_layout()
+    for ext in ("pdf", "png"):
+        fig.savefig(FIG / f"{name}.{ext}", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_lmi_certificate(d: dict, cfg: dict) -> None:
+    """Certified ellipse of the x position loop, with a linear-model trajectory and its input."""
+    from scipy.linalg import expm
+    K = np.array([[-d["kv"] * d["k"], -d["kv"]]])
+    A_cl = np.array([[0.0, 1.0], [0.0, 0.0]]) + np.array([[0.0], [1.0]]) @ K
+    W, ubar = d["W"], d["ubar"]
+    p0 = np.asarray(cfg["initial_state"]["pos"])[0] - cfg["trajectory"]["radius"]     # e_p,x(0)
+    env = cfg["design"]
+    a, b = max(abs(p0), env["min_position_envelope"]), env["min_velocity_envelope"]
+    th = np.linspace(0, 2 * np.pi, 300)
+    ell = np.linalg.cholesky(W) @ np.vstack([np.cos(th), np.sin(th)])            # boundary of xᵀW⁻¹x = 1
+    t = np.linspace(0, 10, 400)
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.9))
+    ax[0].plot(ell[0], ell[1], color=C_REF, lw=1.4, label=r"certified set $\mathcal{E}$")
+    ax[0].plot([-a, a, a, -a, -a], [-b, -b, b, b, -b], color=C_ALT, ls="--", lw=1, label="design box")
+    for x0, c in [(np.array([p0, 0.0]), C_PD), (np.array([-a, -b]), "#e9a03b")]:
+        x = np.array([expm(A_cl * ti) @ x0 for ti in t])
+        ax[0].plot(x[:, 0], x[:, 1], color=c, lw=1.2)
+        ax[1].plot(t, (K @ x.T).ravel(), color=c, lw=1.2,
+                   label=fr"start $({x0[0]:.1f},\,{x0[1]:.1f})$")
+    ax[0].set_xlabel(r"$e_{p,x}$ [m]"); ax[0].set_ylabel(r"$e_{v,x}$ [m/s]"); ax[0].legend(fontsize=7)
+    ax[0].set_title("Position loop, x axis")
+    ax[1].axhline(ubar, color=C_ALT, ls=":"); ax[1].axhline(-ubar, color=C_ALT, ls=":")
+    ax[1].set_xlabel("t [s]"); ax[1].set_ylabel(r"$u = Kx$ [m/s$^2$]"); ax[1].legend(fontsize=7)
+    ax[1].set_title(r"Input stays within $\pm\bar u$")
+    _save(fig, "lmi_certificate")
+
+
+def _settling_time(df, tol=0.05):
+    """First time after which ‖e_p‖ stays below tol."""
+    above = df["e_norm"].to_numpy() >= tol
+    if not above.any():
+        return 0.0
+    last = np.nonzero(above)[0][-1]
+    return float(df["t"].iloc[min(last + 1, len(df) - 1)])
+
+
+def _mission_metrics(df, f_max):
+    f = df[["f1", "f2", "f3", "f4"]].to_numpy()
+    ss = df["t"] >= df["t"].iloc[-1] - 10.0
+    return {
+        "settling_time_5cm_s": _settling_time(df),
+        "final_error_m": float(df["e_norm"].iloc[-1]),
+        "steady_rms_error_m": float(np.sqrt((df.loc[ss, "e_norm"] ** 2).mean())),
+        "motor_force_min_N": float(f.min()),
+        "motor_force_max_N": float(f.max()),
+        "within_motor_limits": bool(f.min() >= 0 and f.max() <= f_max),
+        "max_V2_increase": float(np.diff(df["V2"].to_numpy()[2:]).max()),
+    }
+
+
+def main(quick: bool) -> None:
+    FIG.mkdir(parents=True, exist_ok=True)
+    plt.rcParams.update({"font.size": 9, "axes.grid": True, "grid.alpha": 0.3,
+                         "axes.spines.top": False, "axes.spines.right": False})
+    summary: dict = {}
+    t0 = time.time()
+
+    # ── 1. symbolic verification ───────────────────────────────────────────
+    checks = {**run_all_checks(),
+              **{f"unicycle.{k}": v for k, v in derive_circular_path_following()["checks"].items()},
+              **{f"path_following.{k}": v for k, v in derive_path_following()["checks"].items()}}
+    print(f"[1/5] symbolic checks: {sum(checks.values())}/{len(checks)} passed")
+    if not all(checks.values()):
+        raise SystemExit(f"FAILED: {[k for k, v in checks.items() if not v]}")
+    summary["symbolic_checks"] = {"passed": sum(checks.values()), "total": len(checks)}
+
+    # ── 2. LMI gain synthesis ──────────────────────────────────────────────
+    cfg = load("quadcopter")
+    model = load_model(cfg)
+    f_max = float(model.actuator_ctrlrange[:, 1].min())
+    paper_gains = dict(cfg["controller"], kR=8.0, kw=2.5)        # Lee et al. 2010, 4.3 kg vehicle
+    t = time.time()
+    design = design_cascade_gains(cfg, model)
+    gains = design["controller"]
+    att, pos = design["attitude"], design["position"]
+    level = float(np.sort(att["G"])[:2].sum())                    # min_{i≠j}(g_i + g_j)
+    summary["lmi"] = {
+        "solve_time_s": time.time() - t,
+        "gains": design["controller"],
+        "alpha_position": {a: pos[a]["alpha"] for a in "xyz"},
+        "alpha_attitude": att["alpha"].tolist(),
+        "torque_budget_Nm": design["budgets"]["tau_max"].tolist(),
+        "accel_budget_xy": design["budgets"]["ubar_xy"],
+        "accel_budget_z": design["budgets"]["ubar_z"],
+        "attitude_level_bound": level,
+        # largest roll/pitch error (zero rate error) inside {V₂ < level}: Ψ = ½(g_y + g_z)(1 − cos θ)
+        "certified_roll_deg": float(np.degrees(np.arccos(max(-1.0, 1 - level / (0.5 * (att["G"][1] + att["G"][2])))))),
+    }
+    _plot_lmi_certificate(pos["x"], cfg)
+    print(f"[2/5] LMI design in {summary['lmi']['solve_time_s']:.1f} s: "
+          f"alpha_pos={[round(pos[a]['alpha'], 2) for a in 'xyz']}, alpha_att={np.round(att['alpha'], 2).tolist()}")
+
+    # ── 3. nominal mission ─────────────────────────────────────────────────
+    runs = {
+        "lmi_full": simulate_quad(cfg, gains),
+        "lmi_pd": simulate_quad(cfg, gains, feedforward=False),
+        "paper_full": simulate_quad(cfg, paper_gains, t_end=20.0),
+    }
+    summary["mission"] = {k: _mission_metrics(v, f_max) for k, v in runs.items()}
+    m = summary["mission"]
+    print(f"[3/5] mission: settle {m['lmi_full']['settling_time_5cm_s']:.1f} s, "
+          f"forces [{m['lmi_full']['motor_force_min_N']:.2f}, {m['lmi_full']['motor_force_max_N']:.2f}] N "
+          f"(paper gains: [{m['paper_full']['motor_force_min_N']:.0f}, {m['paper_full']['motor_force_max_N']:.0f}] N)")
+
+    df, pdd = runs["lmi_full"], runs["lmi_pd"]
+    tr = cfg["trajectory"]
+    th = np.linspace(0, 2 * np.pi, 400)
+
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 3.0))
+    ax[0].plot(tr["radius"] * np.cos(th), tr["radius"] * np.sin(th), "--", color=C_ALT, lw=1, label="reference")
+    ax[0].plot(df["x"], df["y"], color=C_REF, lw=1.4, label="vehicle")
+    ax[0].plot(df["x"].iloc[0], df["y"].iloc[0], "o", color="k", ms=4, label="start")
+    ax[0].set_aspect("equal"); ax[0].set_xlabel("x [m]"); ax[0].set_ylabel("y [m]")
+    ax[0].set_title("Top view"); ax[0].legend(fontsize=7, loc="lower left")
+    ax[1].semilogy(df["t"], df["e_norm"], color=C_REF, lw=1.4, label="full geometric law")
+    ax[1].semilogy(pdd["t"], pdd["e_norm"], color=C_PD, lw=1.2, label="PD only (no feedforward)")
+    ax[1].axhline(0.05, color=C_ALT, ls=":", lw=1)
+    ax[1].set_xlabel("t [s]"); ax[1].set_ylabel(r"$\|e_p\|$ [m]"); ax[1].set_ylim(1e-10, 10)
+    ax[1].set_title("Position error"); ax[1].legend(fontsize=7)
+    _save(fig, "mission_tracking")
+
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.8), sharey=False)
+    for a, key, title in [(ax[0], "paper_full", "Gains from the literature"), (ax[1], "lmi_full", "LMI-synthesised gains")]:
+        r = runs[key]; r = r[r["t"] <= 2.0]
+        a.axhspan(0, f_max, color=C_OK, alpha=0.10, lw=0, label="motor range")
+        for c, lab in zip(["f1", "f2", "f3", "f4"], ["FR", "FL", "BR", "BL"]):
+            a.plot(r["t"], r[c], lw=1, label=lab)
+        a.set_title(title); a.set_xlabel("t [s]")
+    ax[0].set_ylabel("motor force [N]"); ax[1].legend(fontsize=7, ncol=3, loc="upper right")
+    ax[1].set_ylim(-0.5, f_max + 0.5)
+    _save(fig, "motor_forces")
+
+    fig, ax = plt.subplots(figsize=(3.6, 2.6))
+    ax.semilogy(df["t"], df["V2"], color=C_REF, lw=1.4)
+    ax.set_xlabel("t [s]"); ax.set_ylabel(r"$V_2$"); ax.set_title("Attitude Lyapunov function")
+    ax.set_xlim(0, 10); ax.set_ylim(1e-12, None)
+    _save(fig, "lyapunov_attitude")
+
+    # ── 4. Monte Carlo ─────────────────────────────────────────────────────
+    n = 100 if quick else cfg["monte_carlo"]["n"]
+    t = time.time()
+    mc = roa_monte_carlo(cfg, gains, n=n)
+    mc.to_csv(OUT / "monte_carlo.csv", index=False)
+    inside = mc["V2_0"] < level
+    summary["monte_carlo"] = {
+        "n": n, "time_s": time.time() - t,
+        "converged": float(mc["converged"].mean()),
+        "feasible": float(mc["feasible"].mean()),
+        "hit_ground": float(mc["hit_ground"].mean()),
+        "n_inside_certified_set": int(inside.sum()),
+        "converged_inside_certified_set": float(mc.loc[inside, "converged"].mean()) if inside.any() else None,
+        "failures_inside_all_ground": bool(mc.loc[inside & ~mc["converged"], "hit_ground"].all()),
+        "feasible_small_perturbation": float(mc.loc[(mc["angle_deg"] < 20) & (mc["offset"] < 1.0), "feasible"].mean()),
+    }
+    s = summary["monte_carlo"]
+    print(f"[4/5] Monte Carlo n={n}: converged {s['converged']:.1%}, within motor limits {s['feasible']:.1%}, "
+          f"ground contact {s['hit_ground']:.1%}")
+
+    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+    groups = [(mc["converged"] & mc["feasible"], C_OK, "converged, within motor limits"),
+              (mc["converged"] & ~mc["feasible"], "#e9c46a", "converged, needs > motor limits"),
+              (~mc["converged"], C_BAD, "ground contact")]
+    for mask, c, lab in groups:
+        ax.scatter(mc.loc[mask, "angle_deg"], mc.loc[mask, "offset"], s=9, color=c, label=lab, lw=0)
+    ax.set_xlabel("initial attitude error [deg]"); ax.set_ylabel("initial position offset [m]")
+    ax.set_title(f"Monte Carlo, {n} initial conditions")
+    ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
+    _save(fig, "monte_carlo")
+
+    # ── 5. unicycle ────────────────────────────────────────────────────────
+    ucfg = load("unicycle")
+    u = simulate_unicycle(ucfg)
+    Rc = ucfg["control"]["R"]
+    summary["unicycle"] = {"final_cross_track_m": float(abs(u["e"].iloc[-1])),
+                           "V_monotone": bool(np.diff(u["V"]).max() <= 1e-9)}
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.8))
+    ax[0].plot(Rc * np.cos(th), Rc * np.sin(th), "--", color=C_ALT, lw=1)
+    ax[0].plot(u["x"], u["y"], color=C_REF, lw=1.4); ax[0].set_aspect("equal")
+    ax[0].set_xlabel("x [m]"); ax[0].set_ylabel("y [m]"); ax[0].set_title("Unicycle path")
+    ax[1].semilogy(u["t"], u["V"], color=C_REF, lw=1.4)
+    ax[1].set_xlabel("t [s]"); ax[1].set_ylabel("V"); ax[1].set_title("Lyapunov function")
+    _save(fig, "unicycle")
+    print(f"[5/5] unicycle: final cross-track error {summary['unicycle']['final_cross_track_m']:.1e} m")
+
+    # ── outputs ────────────────────────────────────────────────────────────
+    summary["runtime_s"] = time.time() - t0
+    (OUT / "summary.json").write_text(json.dumps(summary, indent=2, default=float))
+    _write_macros(summary)
+    print(f"done in {summary['runtime_s']:.0f} s → {OUT.relative_to(ROOT)}/")
+
+
+def _sci(x: float) -> str:
+    mant, exp = f"{x:.0e}".split("e")
+    return rf"{mant}\times10^{{{int(exp)}}}"
+
+
+def _write_macros(s: dict) -> None:
+    """LaTeX macros so that the report never contains a hand-copied number."""
+    m, mc, lmi = s["mission"], s["monte_carlo"], s["lmi"]
+    g = lmi["gains"]
+    vals = {
+        "NChecks": f"{s['symbolic_checks']['total']}",
+        "LmiTime": f"{lmi['solve_time_s']:.1f}",
+        "AlphaPosMin": f"{min(lmi['alpha_position'].values()):.2f}",
+        "AlphaPosMax": f"{max(lmi['alpha_position'].values()):.2f}",
+        "AlphaRollPitch": f"{lmi['alpha_attitude'][0]:.1f}",
+        "AlphaYaw": f"{lmi['alpha_attitude'][2]:.1f}",
+        "TauBudgetXY": f"{lmi['torque_budget_Nm'][0]:.3f}",
+        "TauBudgetZ": f"{lmi['torque_budget_Nm'][2]:.4f}",
+        "AccelBudgetXY": f"{lmi['accel_budget_xy']:.1f}",
+        "AccelBudgetZ": f"{lmi['accel_budget_z']:.2f}",
+        "LevelBound": f"{lmi['attitude_level_bound']:.3f}",
+        "GainKvX": f"{g['kv'][0]:.2f}", "GainKvZ": f"{g['kv'][2]:.2f}",
+        "SettleTime": f"{m['lmi_full']['settling_time_5cm_s']:.1f}",
+        "FinalErr": _sci(m['lmi_full']['final_error_m']),
+        "CertRollDeg": f"{lmi['certified_roll_deg']:.0f}",
+        "PdRms": f"{1e3 * m['lmi_pd']['steady_rms_error_m']:.1f}",
+        "FMin": f"{m['lmi_full']['motor_force_min_N']:.2f}",
+        "FMax": f"{m['lmi_full']['motor_force_max_N']:.2f}",
+        "PaperFMin": f"{m['paper_full']['motor_force_min_N']:.0f}".replace("-", "$-$"),
+        "PaperFMax": f"{m['paper_full']['motor_force_max_N']:.0f}",
+        "PaperSettle": f"{m['paper_full']['settling_time_5cm_s']:.1f}",
+        "McN": f"{mc['n']}",
+        "McTime": f"{mc['time_s']:.0f}",
+        "McConverged": f"{100 * mc['converged']:.1f}",
+        "McFeasible": f"{100 * mc['feasible']:.1f}",
+        "McGround": f"{100 * mc['hit_ground']:.1f}",
+        "McInside": f"{mc['n_inside_certified_set']}",
+        "McInsideConv": f"{100 * (mc['converged_inside_certified_set'] or 0):.0f}",
+        "McSmallFeasible": f"{100 * mc['feasible_small_perturbation']:.0f}",
+        "Runtime": f"{s['runtime_s']:.0f}",
+    }
+    lines = ["% generated by main.py — do not edit"] + [rf"\newcommand{{\R{k}}}{{{v}}}" for k, v in vals.items()]
+    (OUT / "numbers.tex").write_text("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--quick", action="store_true", help="smaller Monte Carlo")
+    main(ap.parse_args().quick)
 ```
 
 ### `models/quadcopter/quadcopter.xml`
 
 ```xml
-<mujoco model="quadcopter">
-
-  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
-
-  <default>
-    <geom rgba="0.8 0.8 0.8 1" contype="1" conaffinity="1"/>
-  </default>
-
-  <worldbody>
-    <light pos="-5 0 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
-    <light pos="+5 0 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
-    <light pos="0 -10 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
-    <light pos="0 +10 10" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
-    <geom name="floor" type="plane" size="20 20 0.1" rgba="0.9 0.9 0.9 1"/>
-
-    <body name="quad" pos="0 0 0.5">
-      <freejoint name="root"/>
-
-      <!-- central frame -->
-      <geom name="body" type="box"
-            size="0.06 0.06 0.025"
-            mass="0.5"
-            rgba="0.2 0.2 0.8 1"/>
-
-      <!-- 4 arms: X configuration at ±45° -->
-      <geom name="arm_fr" type="capsule" fromto="0 0 0  0.13 -0.13 0" size="0.012" mass="0.05"/>
-      <geom name="arm_fl" type="capsule" fromto="0 0 0  0.13  0.13 0" size="0.012" mass="0.05"/>
-      <geom name="arm_br" type="capsule" fromto="0 0 0 -0.13 -0.13 0" size="0.012" mass="0.05"/>
-      <geom name="arm_bl" type="capsule" fromto="0 0 0 -0.13  0.13 0" size="0.012" mass="0.05"/>
-
-      <!-- rotors (visual disks) -->
-      <geom name="prop_fr" type="cylinder" pos=" 0.13 -0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
-      <geom name="prop_fl" type="cylinder" pos=" 0.13  0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
-      <geom name="prop_br" type="cylinder" pos="-0.13 -0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
-      <geom name="prop_bl" type="cylinder" pos="-0.13  0.13 0.015" size="0.065 0.004" mass="0.025" rgba="0.1 0.1 0.1 1"/>
-
-      <!--
-        Sites: where actuator forces are applied.
-        Gear vector = [fx fy fz tx ty tz] in site local frame.
-        Each motor produces:
-          - thrust along +z (force)
-          - reaction torque along z (±kτ, alternating CW/CCW)
-        CW  rotors (fr, bl): negative z-torque → gear "0 0 1 0 0 -0.012"
-        CCW rotors (fl, br): positive z-torque → gear "0 0 1 0 0  0.012"
-      -->
-      <site name="s_fr" pos=" 0.13 -0.13 0"/>   <!-- CW  -->
-      <site name="s_fl" pos=" 0.13  0.13 0"/>   <!-- CCW -->
-      <site name="s_br" pos="-0.13 -0.13 0"/>   <!-- CCW -->
-      <site name="s_bl" pos="-0.13  0.13 0"/>   <!-- CW  -->
-
-      <!-- IMU reference point at CoM -->
-      <site name="imu" pos="0 0 0" size="0.005"/>
-
-    </body>
-  </worldbody>
-
-  <actuator>
-    <!--
-      ctrl ∈ [0, 4] N per motor.
-      Hover thrust per rotor ≈ total_mass * 9.81 / 4 ≈ 0.73 * 9.81 / 4 ≈ 1.79 N
-      so ctrlrange 0..4 gives enough headroom.
-    -->
-    <motor name="m_fr" site="s_fr" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_fl" site="s_fl" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_br" site="s_br" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_bl" site="s_bl" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
-  </actuator>
-
-  <sensor>
-    <gyro         name="gyro"  site="imu"/>
-    <accelerometer name="accel" site="imu"/>
-    <framequat    name="quat"  objtype="site" objname="imu"/>
-    <framepos     name="pos"   objtype="site" objname="imu"/>
-    <framelinvel  name="vel"   objtype="site" objname="imu"/>
-  </sensor>
-
-</mujoco>
-```
-
-### `models/quadcopter/quadcopter_dynamic.xml`
-
-```xml
 <!--
-  models/quadcopter/quadcopter_dynamic.xml
+  models/quadcopter/quadcopter.xml
   
   Quadrotor model for full-dynamics cascade control.
   Identical geometry to the kinematic model, with:
@@ -861,12 +439,23 @@ if __name__ == "__main__":
     ─────────────────────
     total       0.80 kg
   
-  Hover thrust per motor = 0.80 × 9.81 / 4 ≈ 1.96 N  (49 % of max 4 N)
+  Hover thrust per motor = 0.80 × 9.81 / 4 ≈ 1.96 N
 -->
 
 <mujoco model="quadcopter_dynamic">
 
   <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <!-- rendering only (src/experiments.py: render_quad); no effect on the dynamics -->
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.4 0.4 0.4"/>
+  </visual>
+  <asset>
+    <texture name="sky" type="skybox" builtin="gradient" rgb1="0.75 0.85 0.95" rgb2="1 1 1" width="256" height="256"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.72 0.74 0.76" rgb2="0.82 0.84 0.86" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="30 30"/>
+  </asset>
 
   <default>
     <geom rgba="0.8 0.8 0.8 1" contype="1" conaffinity="1"/>
@@ -874,9 +463,9 @@ if __name__ == "__main__":
   </default>
 
   <worldbody>
-    <light pos="0 0 5" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2"/>
-    <light pos="3 3 3" dir="-1 -1 -1" diffuse="0.3 0.3 0.3"/>
-    <geom name="floor" type="plane" size="30 30 0.1" rgba="0.85 0.85 0.85 1"/>
+    <light pos="0 0 5" dir="0 0 -1" directional="true" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2"/>
+    <light pos="3 3 3" dir="-1 -1 -1" directional="true" diffuse="0.3 0.3 0.3"/>
+    <geom name="floor" type="plane" size="30 30 0.1" material="grid"/>
 
     <body name="quad" pos="0 0 0.5">
       <freejoint name="root"/>
@@ -931,23 +520,20 @@ if __name__ == "__main__":
 
   <!--
     Actuators.
-    ctrl[i] is in Newtons (0 → max_thrust_per_motor).
+    ctrl[i] is the thrust of motor i in Newtons.
     MuJoCo applies the force at the site AND the torque from the gear vector.
     The cascade controller's allocation matrix maps [T, τx, τy, τz] → ctrl[0..3].
-  
-  <actuator>
-    <motor name="m_fr" site="s_fr" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_fl" site="s_fl" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_br" site="s_br" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 4"/>
-    <motor name="m_bl" site="s_bl" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 4"/>
-  </actuator>
+
+    ctrlrange is the motor spec (0–8 N per motor); it is read by the gain
+    design and by the feasibility checks.  ctrllimited="false" keeps MuJoCo
+    from clipping: the stability analysis assumes unbounded, signed motor
+    forces, so the simulated plant must not clip them either.
   -->
-  
   <actuator>
-    <motor name="m_fr" site="s_fr" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 8"/>
-    <motor name="m_fl" site="s_fl" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 8"/>
-    <motor name="m_br" site="s_br" gear="0 0 1 0 0  0.012" ctrllimited="true" ctrlrange="0 8"/>
-    <motor name="m_bl" site="s_bl" gear="0 0 1 0 0 -0.012" ctrllimited="true" ctrlrange="0 8"/>
+    <motor name="m_fr" site="s_fr" gear="0 0 1 0 0 -0.012" ctrlrange="0 8" ctrllimited="false"/>
+    <motor name="m_fl" site="s_fl" gear="0 0 1 0 0  0.012" ctrlrange="0 8" ctrllimited="false"/>
+    <motor name="m_br" site="s_br" gear="0 0 1 0 0  0.012" ctrlrange="0 8" ctrllimited="false"/>
+    <motor name="m_bl" site="s_bl" gear="0 0 1 0 0 -0.012" ctrlrange="0 8" ctrllimited="false"/>
   </actuator>
 
   <sensor>
@@ -965,950 +551,24 @@ if __name__ == "__main__":
 </mujoco>
 ```
 
-### `models/unicycle/unicycle.xml`
+### `MUJOCO_LOG.TXT`
 
-```xml
-<mujoco model="unicycle">
-  <compiler angle="radian"/>
-  <option timestep="0.005" gravity="0 0 -9.81"/>
-  
-  <visual>
-    <global offwidth="960" offheight="540"/>
-  </visual>
+```text
+Mon Oct 12 16:30:29 2026
+WARNING: Nan, Inf or huge value in CTRL at ACTUATOR 0. The simulation is unstable. Time = 0.8080.
 
-  <asset>
-    <material name="blue" rgba="0.2 0.5 0.8 1"/>
-    <material name="red" rgba="1 0.3 0.3 1"/>
-  </asset>
+Mon Oct 12 16:30:29 2026
+WARNING: Nan, Inf or huge value in QACC at DOF 3. The simulation is unstable. Time = 0.8080.
 
-  <worldbody>
-    <light pos="0 0 5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.8 0.9 0.8 1"/>
-    
-    <body name="unicycle" pos="0 0 1">
-      <freejoint name="root"/>
-      <!-- Rotate the cylinder 90 deg (pi/2) around X so it acts like an upright rolling wheel -->
-      <geom name="wheel" type="cylinder" size="0.15 0.05" euler="1.57079632679 0 0" material="blue"/>
-      <!--<geom name="heading" type="box" size="0.06 0.01 0.01" pos="0.12 0 0" material="red"/>-->
-    </body>
-  </worldbody>
-</mujoco>
+Mon Oct 12 16:30:29 2026
+WARNING: Nan, Inf or huge value in CTRL at ACTUATOR 0. The simulation is unstable. Time = 0.5960.
+
+Mon Oct 12 16:30:29 2026
+WARNING: Nan, Inf or huge value in QACC at DOF 3. The simulation is unstable. Time = 0.5960.
+
+Mon Oct 12 16:30:29 2026
+WARNING: Nan, Inf or huge value in QACC at DOF 3. The simulation is unstable. Time = 1.1900.
 ```
-
-### `notebooks/_lyapunov.md`
-
-````markdown
-# Lyapunov-Certified Cascade Controller for a Quadrotor UAV
- 
-## Problem statement
- 
-A quadrotor must track the horizontal circle
- 
-$$p_d(t) = \bigl[R\cos(\omega t),\; R\sin(\omega t),\; z_d\bigr]^\top,
-\qquad R = 3\;\text{m},\quad \omega = 0.5\;\text{rad/s},\quad z_d = 3\;\text{m}$$
- 
-starting from rest at $[0,\,0,\,0.5]$ m, using real motor forces integrated by
-the MuJoCo physics engine.
- 
-## Control architecture
- 
-The controller is a **two-tier geometric cascade**:
- 
-| Tier | Role | Lyapunov status |
-|------|------|-----------------|
-| **Outer loop** (position) | $\mathbf{v}_\text{cmd} = \mathbf{v}_d - K\mathbf{e}_p$ | **GAS** — no caveats |
-| **Inner loop** (attitude, SO(3)) | $\boldsymbol{\tau} = -k_R\mathbf{e}_R - k_\Omega\mathbf{e}_\Omega + \boldsymbol{\Omega}\times J\boldsymbol{\Omega}$ | **GAS** after gyroscopic fix |
- 
-## What this notebook proves and shows
- 
-1. **Tier 1** is GAS by Lyapunov's Direct Method — $\dot V_1 < 0$ everywhere.
-2. **Tier 2** requires the gyroscopic cancellation $\boldsymbol{\Omega}\times J\boldsymbol{\Omega}$
-   to restore its certificate (Lee et al. 2010). Without it, $\dot V_2$ retains
-   cross-terms that prevent negative definiteness.
-3. The **combined cascade** is GAS via the sum $V_\text{total} = V_1 + V_2$.
-4. Motor forces are **not clipped** so the global certificate holds. Saturation
-   is left as future work (Control Barrier Functions).
-5. A final section compares **trajectory tracking** with **path following**
-   and explains why trajectory tracking consistently outperforms path following
-   for this specific problem.
-
-# Lyapunov Analysis
-
-kin = derive_kinematic_certificate()
- 
-display(Math(r"\textbf{Tier 1 — Kinematic Outer Loop}"))
- 
-display(Math(r"\textbf{Lyapunov candidate:}"))
-display(Math(r"V_1(\mathbf{e}) = " + sp.latex(kin["V"])))
- 
-display(Math(
-    r"\textbf{Positive Definite (PD):}\quad "
-    r"V_1 > 0\ \forall\,\mathbf{e}\neq 0,\quad V_1(0)=0,\quad "
-    r"V_1 \to \infty\ \text{as}\ \|\mathbf{e}\|\to\infty\quad\text{(radially unbounded)}"
-))
- 
-display(Math(
-    r"\textbf{Error dynamics under }"
-    r"\mathbf{v}_\mathrm{cmd} = \mathbf{v}_d - K\mathbf{e}\textbf{:}"
-))
-display(Math(r"\dot{\mathbf{e}} = " + sp.latex(kin["e_dot"])))
- 
-display(Math(r"\textbf{Time derivative:}"))
-display(Math(
-    r"\dot{V}_1 = \nabla V_1 \cdot \dot{\mathbf{e}} = \mathbf{e}^\top\dot{\mathbf{e}} = "
-    + sp.latex(kin["V_dot"])
-))
- 
-display(Math(
-    r"\textbf{Negative Definite (ND):}\quad "
-    r"\dot{V}_1 = -\mathbf{e}^\top K\mathbf{e} < 0\ \forall\,\mathbf{e}\neq 0"
-    r"\quad\text{since }k_i > 0"
-))
- 
-display(Math(
-    r"\textbf{LaSalle invariant set:}\quad "
-    r"\mathcal{S} = \{\mathbf{e}:\dot{V}_1=0\} = \{\mathbf{0}\}"
-    r"\quad\Rightarrow\quad\mathcal{M} = \{\mathbf{0}\}"
-))
- 
-display(Math(
-    r"\therefore\quad\mathbf{e}(t)\to\mathbf{0}\ \text{as}\ t\to\infty"
-    r"\quad\textbf{(Globally Asymptotically Stable — no caveats)}"
-))
-
-
-```python
-"""
-src/symbolic/quadcopter_certified_lyapunov.py
-
-Symbolic Lyapunov analysis for the fully certified cascade controller.
-
-Each function returns a dict of SymPy expressions that can be displayed
-directly in the notebook via display(Math(sp.latex(...))).
-
-Functions
----------
-derive_kinematic_certificate()
-    Full Lyapunov proof for the outer kinematic loop:
-      V, V_dot, PD proof, ND proof, LaSalle invariant set.
-
-derive_attitude_lyapunov()
-    Full Lyapunov proof for the inner attitude loop:
-      V_att, V_att_dot (broken), V_att_dot (certified), ND proof.
-
-derive_full_lyapunov()
-    Combined cascade Lyapunov function and its derivative.
-"""
-
-from __future__ import annotations
-import sympy as sp
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 1.  Kinematic outer loop
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_kinematic_certificate() -> dict:
-    """
-    Lyapunov certificate for the kinematic position loop.
-
-    Model:   ẋ = u = v_cmd  (kinematic sim sets qpos/qvel directly)
-    Error:   ė = ẋ − ẋ_d = v_cmd − v_d = −K e
-    Candidate:  V₁ = ½ eᵀe
-    Psi is heading error
-    """
-    ex, ey, ez, epsi = sp.symbols("e_x e_y e_z e_psi", real=True)
-    kx, ky, kz, kpsi = sp.symbols("k_x k_y k_z k_psi", positive=True)
-
-    e = sp.Matrix([ex, ey, ez, epsi])
-    K = sp.diag(kx, ky, kz, kpsi)
-
-    # ── Lyapunov candidate ────────────────────────────────────────────────────
-    V = sp.Rational(1, 2) * e.dot(e)                   # ½ ‖e‖²
-
-    # ── Positive Definiteness of V ────────────────────────────────────────────
-    # V = ½(ex² + ey² + ez² + eψ²) ≥ 0,  with V = 0 iff e = 0
-    V_is_PD = sp.simplify(V) == sp.Rational(1, 2) * (ex**2 + ey**2 + ez**2 + epsi**2)
-
-    # ── Error dynamics under control law v_cmd = v_d − K e ───────────────────
-    e_dot = -K * e                                     # ė = −K e
-
-    # ── Time derivative V̇ = ∇V · ė ──────────────────────────────────────────
-    grad_V = e                                          # ∇V = e  (for V = ½‖e‖²)
-    V_dot  = grad_V.dot(e_dot)
-    V_dot  = sp.expand(V_dot)
-    # V̇ = −kx ex² − ky ey² − kz ez² − kψ eψ²
-
-    # ── Negative Definiteness of V̇ ───────────────────────────────────────────
-    # V̇ = −eᵀ K e.  Since K = diag(k_i) with k_i > 0,  K is SPD,
-    # so −eᵀ K e < 0 for all e ≠ 0.
-    V_dot_matrix_form = -e.T * K * e               # symbolic matrix form
-    V_dot_is_ND = True                              # proven: all k_i > 0
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S = {e : V̇(e) = 0} = {e : kx ex² + … = 0} = {0}  (since k_i > 0)
-    # Largest invariant set M ⊆ S is trivially the origin.
-    # ∴ by LaSalle, e(t) → 0  (GAS) — though here V̇ < 0 makes it redundant.
-    S_description = "{ e ∈ ℝ⁴ : V̇ = 0 } = { 0 }  (only origin)"
-    M_description = "M = { 0 }  →  GAS by LaSalle (and directly by V̇ < 0)"
-
-    # ── Radial unboundedness (V → ∞ as ‖e‖ → ∞) ─────────────────────────────
-    # V = ½‖e‖² is radially unbounded → trajectories bounded → GAS is global.
-
-    return {
-        "e":                 e,
-        "K":                 K,
-        "V":                 V,
-        "e_dot":             e_dot,
-        "grad_V":            grad_V,
-        "V_dot":             V_dot,
-        "V_dot_matrix":      V_dot_matrix_form,
-        "V_is_PD":           V_is_PD,
-        "V_dot_is_ND":       V_dot_is_ND,
-        "S_description":     S_description,
-        "M_description":     M_description,
-        "stability":         "GAS",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 2.  Attitude inner loop
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_attitude_lyapunov() -> dict:
-    """
-    Lyapunov certificate for the SO(3) attitude tracking loop.
-
-    The attitude Lyapunov function follows Lee et al. (2010) eq. 9:
-
-        V₂ = kR Ψ(R, R_d) + ½ eΩᵀ J eΩ
-
-    where Ψ = ½ tr(I − R_dᵀ R) is the attitude tracking function on SO(3).
-
-    For the symbolic analysis we work with the quadratic approximation
-    valid near the equilibrium (small attitude error):
-
-        Ψ ≈ ¼ ‖e_R‖²      (Lee et al. Lemma 1)
-
-    so  V₂ ≈ ¼ kR ‖e_R‖² + ½ eΩᵀ J eΩ   (positive definite near origin).
-    """
-    kR, kw         = sp.symbols("k_R k_w", positive=True)
-    eRx, eRy, eRz  = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}", real=True)
-    eOx, eOy, eOz  = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}", real=True)
-    Jx, Jy, Jz     = sp.symbols("J_x J_y J_z", positive=True)
-    Ox, Oy, Oz     = sp.symbols(r"\Omega_x \Omega_y \Omega_z", real=True)
-
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-    Om   = sp.Matrix([Ox, Oy, Oz])
-
-    # ── Lyapunov candidate (quadratic approx near equilibrium) ───────────────
-    Psi   = sp.Rational(1, 4) * e_R.dot(e_R)                    # Ψ ≈ ¼‖e_R‖²
-    # e_Om.T * J * e_Om is a 1×1 MutableDenseMatrix — extract scalar first
-    V_att = kR * Psi + sp.Rational(1, 2) * (e_Om.T * J * e_Om)[0, 0]
-
-    # ── Positive Definiteness ─────────────────────────────────────────────────
-    # V₂ = ¼ kR ‖e_R‖² + ½ eΩᵀ J eΩ
-    # Both terms ≥ 0;  = 0  iff  e_R = 0 AND e_Ω = 0.
-    # J is SPD (physical inertia), kR > 0  →  V₂ is PD.
-
-    # ── V̇₂ WITHOUT gyroscopic cancellation (broken controller) ───────────────
-    # Ω̇ = J⁻¹ τ  (simplified, ignoring Coriolis)
-    # With τ = −kR e_R − kΩ e_Ω:
-    #   ė_R ≈ e_Ω  (linearised SO(3) kinematics near equilibrium)
-    #   ė_Ω = J⁻¹ τ = J⁻¹(−kR e_R − kΩ e_Ω)
-    #
-    # V̇₂_broken = ∂V₂/∂e_R · ė_R + ∂V₂/∂e_Ω · ė_Ω
-    #           = ½kR e_Rᵀ e_Ω + eΩᵀ J J⁻¹ τ
-    #           = ½kR e_Rᵀ e_Ω + eΩᵀ(−kR e_R − kΩ e_Ω)
-    #           = ½kR e_Rᵀ e_Ω − kR eΩᵀ e_R − kΩ ‖e_Ω‖²
-    # The cross terms do NOT cancel → V̇ is not ND.
-    # (Full Lee derivation shows the Coriolis term Ω × JΩ is what cancels them.)
-
-    e_R_dot_approx  = e_Om                             # ė_R ≈ e_Ω
-    J_inv           = sp.diag(1/Jx, 1/Jy, 1/Jz)
-    tau_no_fix      = -kR * e_R - kw * e_Om
-
-    dV_deR  = sp.Rational(1, 2) * kR * e_R
-    dV_deOm = J * e_Om
-
-    V_att_dot_broken = dV_deR.dot(e_R_dot_approx) + dV_deOm.dot(J_inv * tau_no_fix)
-    V_att_dot_broken = sp.expand(V_att_dot_broken)
-
-    # ── V̇₂ WITH gyroscopic cancellation (certified controller) ───────────────
-    # τ_cert = −kR e_R − kΩ e_Ω + Ω × JΩ
-    # The Ω × JΩ term cancels the Coriolis contribution in V̇:
-    #   eΩᵀ J J⁻¹ Ω × JΩ = eΩᵀ J⁻¹ J (Ω × JΩ) contributes exactly
-    #   the term needed to cancel the cross terms.
-    #
-    # Result (Lee et al. Theorem 1):
-    #   V̇₂_cert = −kR e_Rᵀ e_Ω + eΩᵀ(−kR e_R − kΩ e_Ω)
-    #            = −kR‖e_R‖² − kΩ‖e_Ω‖²   wait — let's compute this properly
-
-    gyro           = Om.cross(J * Om)                  # Ω × JΩ
-    tau_cert       = -kR * e_R - kw * e_Om + gyro
-    V_att_dot_cert = dV_deR.dot(e_R_dot_approx) + dV_deOm.dot(J_inv * tau_cert)
-    V_att_dot_cert = sp.expand(V_att_dot_cert)
-
-    # ── Negative Definiteness of V̇₂_cert ─────────────────────────────────────
-    # V̇₂_cert = −kR ‖e_R‖² − kΩ ‖e_Ω‖² + (cross terms that cancel via gyro)
-    # With kR, kΩ > 0 and cross terms cancelled:  V̇₂_cert < 0  ∀ (e_R, e_Ω) ≠ 0
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S_att = {(e_R, e_Ω) : V̇₂_cert = 0}
-    # V̇₂_cert = 0  iff  kR‖e_R‖² = 0  AND  kΩ‖e_Ω‖² = 0
-    #          iff  e_R = 0  AND  e_Ω = 0
-    # Largest invariant set M_att = {(0, 0)}  →  attitude GAS by LaSalle.
-
-    return {
-        "V_att":              V_att,
-        "Psi":                Psi,
-        "V_att_dot_broken":   V_att_dot_broken,
-        "V_att_dot_cert":     V_att_dot_cert,
-        "gyro_term":          gyro,
-        "tau_no_fix":         tau_no_fix,
-        "tau_cert":           tau_cert,
-        "V_att_is_PD":        True,
-        "V_att_dot_cert_is_ND": True,
-        "S_att":   "{ (e_R, e_Ω) : V̇₂ = 0 } = { (0, 0) }",
-        "M_att":   "M_att = { (0, 0) }  →  attitude GAS by LaSalle",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 3.  Combined cascade Lyapunov function
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_full_lyapunov() -> dict:
-    """
-    Combined Lyapunov function for the full cascade system.
-
-    V_total = V₁(e_p) + V₂(e_R, e_Ω)
-
-    Under the time-scale separation assumption (inner loop faster than outer):
-      V̇_total ≤ −α‖e_p‖² − β₁‖e_R‖² − β₂‖e_Ω‖²  < 0
-
-    where α, β₁, β₂ > 0 depend on the gains.
-    """
-    ex, ey, ez          = sp.symbols("e_x e_y e_z", real=True)
-    eRx, eRy, eRz       = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}", real=True)
-    eOx, eOy, eOz       = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}", real=True)
-    epsi                = sp.Symbol("e_psi", real=True)
-    kx, ky, kz, kpsi    = sp.symbols("k_x k_y k_z k_psi", positive=True)
-    kR, kw              = sp.symbols("k_R k_w", positive=True)
-    Jx, Jy, Jz          = sp.symbols("J_x J_y J_z", positive=True)
-
-    e_p  = sp.Matrix([ex, ey, ez, epsi])
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-
-    # ── Total Lyapunov function ───────────────────────────────────────────────
-    V1 = sp.Rational(1, 2) * e_p.dot(e_p)
-    V2 = sp.Rational(1, 4) * kR * e_R.dot(e_R) + sp.Rational(1, 2) * (e_Om.T * J * e_Om)[0, 0]
-    V_total = V1 + V2
-
-    # ── Total V̇ (under certified control + time-scale separation) ────────────
-    K  = sp.diag(kx, ky, kz, kpsi)
-    V1_dot = -(e_p.T * K * e_p)[0, 0]             # outer loop contribution
-    V2_dot = -kR * e_R.dot(e_R) - kw * e_Om.dot(e_Om)  # inner loop contribution
-
-    V_total_dot = sp.expand(V1_dot + V2_dot)
-
-    # ── Definiteness ──────────────────────────────────────────────────────────
-    # V_total  is PD:  sum of two PD functions
-    # V̇_total  is ND:  −eₚᵀKep − kR‖e_R‖² − kΩ‖e_Ω‖² < 0  ∀ non-zero state
-    # V_total is radially unbounded  →  GAS is GLOBAL
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S = {(e_p, e_R, e_Ω) : V̇_total = 0}
-    #   = {e_p = 0} ∩ {e_R = 0} ∩ {e_Ω = 0}  = {origin}
-    # M = {origin}  →  GAS for the full cascade.
-
-    return {
-        "V1":           V1,
-        "V2":           V2,
-        "V_total":      V_total,
-        "V1_dot":       V1_dot,
-        "V2_dot":       V2_dot,
-        "V_total_dot":  V_total_dot,
-        "is_GAS":       True,
-        "S_total":      "{ (e_p, e_R, e_Ω) : V̇_total = 0 } = { origin }",
-        "M_total":      "M = { origin }  →  full cascade GAS",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 4.  Gyroscopic fix (unchanged, kept for backward compatibility)
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_gyroscopic_fix() -> dict:
-    """
-    Show that adding Ω × JΩ to the torque restores the Lee et al.
-    attitude certificate, and that for a circle with constant ω the
-    remaining inertial feedforward term vanishes.
-    """
-    kR, kw = sp.symbols("k_R k_w", positive=True)
-    eRx, eRy, eRz = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}")
-    eOx, eOy, eOz = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}")
-    Jx, Jy, Jz    = sp.symbols("J_x J_y J_z", positive=True)
-    Ox, Oy, Oz    = sp.symbols(r"\Omega_x \Omega_y \Omega_z")
-    omega_d       = sp.Symbol(r"\omega_d", positive=True)
-
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-    Om   = sp.Matrix([Ox, Oy, Oz])
-
-    tau_no_fix = -kR * e_R - kw * e_Om
-    gyro       = Om.cross(J * Om)
-    tau_fixed  = -kR * e_R - kw * e_Om + gyro
-
-    Om_d   = sp.Matrix([0, 0, omega_d])
-    Om_hat = sp.Matrix([
-        [  0, -Oz,  Oy],
-        [ Oz,   0, -Ox],
-        [-Oy,  Ox,   0],
-    ])
-    residual_ff            = sp.simplify(J * (Om_hat * Om_d))
-    residual_ff_at_hover   = residual_ff.subs({Ox: 0, Oy: 0, Oz: omega_d})
-
-    return {
-        "tau_no_fix":           tau_no_fix,
-        "tau_fixed":            tau_fixed,
-        "gyro_term":            gyro,
-        "residual_ff":          residual_ff,
-        "residual_ff_at_hover": residual_ff_at_hover,
-    }
-```
-````
-
-### `Project Structure.md`
-
-````markdown
-# MCAV Project Specification — MuJoCo-only Modular Simulation + Control (URDF-only models)
-
-## 0. Objectives
-
-We want a modular research environment that supports:
-
-- **Iterative complexity**
-  1) Unicycle: path-following + Lyapunov analysis  
-  2) More complex vehicles (eventually quadrotor / quadricopter)  
-  3) Multi-vehicle formation control  
-  4) (Stretch) Cooperative vehicle target tracking
-
-- **Symbolic computations** (SymPy) to derive models / Lyapunov candidates and verify convergence conditions.
-- **Numerical simulations** (**MuJoCo**) for validation, stress tests, and batch experiments.
-- **Strong plotting pipeline** and an exportable **LaTeX report**.
-- **Parameter flexibility** (easy tuning) and **optimization** (e.g., Optuna).
-
-Constraints:
-- **MuJoCo only** (no PyBullet or other engines).
-- **URDF-only for robot models**: all robots must be authored and maintained as **URDF** (single source of truth).
-- **ROS not required** (URDF is used purely as a model format, not implying ROS tooling).
-- Must work well on **ARM mac (Apple Silicon, e.g., M3)**.
-- Must support:
-  - notebooks + importable Python modules
-  - modular simulation wrappers (with/without video)
-  - per-step structured logging
-  - tqdm for any time-consuming process
-  - strict separation of **simulation FPS** and **video FPS**
-
-> Note: MuJoCo natively uses MJCF, but this project will treat **URDF as the authoritative model format** and will **load URDF into MuJoCo** (potentially via a conversion step/tooling if required). No hand-authored MJCF should be maintained as a source model.
-
----
-
-## 1. Tooling & environment management
-
-### 1.1 Package manager
-Use **`uv`** for speed + clean ARM-native environments.
-
-```bash
-uv init mcav_project
-cd mcav_project
-uv add mujoco numpy scipy sympy matplotlib plotly pandas tqdm ipykernel jupyterlab pydantic pyyaml imageio[ffmpeg] optuna
-uv add --dev pytest black ruff
-```
-
----
-
-## 2. Repository structure (URDF-only models)
-
-```
-mcav_project/
-│
-├── PEDRO_MATERIAL/              # theory slides/reference (read-only)
-│
-├── config/                      # all tunable parameters (YAML)
-│   ├── sim_default.yaml
-│   ├── unicycle.yaml
-│   └── quadrotor.yaml
-│
-├── models/
-│   ├── urdf/                    # URDF is the only source of truth
-│   │   ├── unicycle.urdf
-│   │   └── quadrotor.urdf
-│   └── assets/                  # meshes/textures referenced by URDF
-│
-├── src/
-│   ├── simulation/
-│   │   ├── __init__.py
-│   │   ├── base_sim.py          # abstract base wrapper
-│   │   ├── headless_sim.py      # no rendering (fast)
-│   │   ├── video_sim.py         # offscreen render -> video
-│   │   ├── viewer_sim.py        # interactive live viewer
-│   │   └── urdf_loader.py       # URDF -> MuJoCo model loading utilities
-│   │
-│   ├── vehicles/
-│   │   ├── __init__.py
-│   │   ├── unicycle.py
-│   │   └── quadrotor.py
-│   │
-│   ├── control/
-│   │   ├── __init__.py
-│   │   ├── lyapunov.py
-│   │   ├── path_following.py
-│   │   ├── formation.py
-│   │   └── tracking.py
-│   │
-│   ├── symbolic/
-│   │   ├── __init__.py
-│   │   └── kinematics.py
-│   │
-│   ├── logging/
-│   │   ├── __init__.py
-│   │   └── sim_logger.py        # JSON records -> DataFrame -> file
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       ├── config.py
-│       └── plotting.py
-│
-├── notebooks/
-│   ├── 01_unicycle_path_following/
-│   │   ├── 01_symbolic_derivation.ipynb
-│   │   └── 02_simulation.ipynb
-│   ├── 02_lyapunov_analysis/
-│   └── 03_quadrotor_formation/
-│
-├── data/                        # auto-generated simulation logs (JSON)
-├── videos/                      # auto-generated recordings (mp4)
-│
-├── report/                      # LaTeX report source
-│   ├── main.tex
-│   └── figures/                 # plots exported from notebooks
-│
-├── pyproject.toml
-└── README.md
-```
-
----
-
-## 3. Core design: simulation wrappers
-
-### 3.1 Wrapper concept
-We will provide **multiple wrappers** around MuJoCo:
-
-1. **HeadlessSim**: no rendering; fastest; for batch runs and optimization.
-2. **VideoSim**: offscreen rendering; records video to file.
-3. **ViewerSim**: interactive viewer; for debugging.
-
-All wrappers share the same core idea:
-
-- `BaseSim` owns: setup, stepping, timing, logging, teardown.
-- You override a single function: **`_loop_step(t, step)`**.
-
-### 3.2 Critical FPS requirement
-- Simulation runs at physics timestep `dt` (e.g. 0.005 => 200 Hz).
-- Video capture runs at independent `video_fps` (e.g. 30 FPS).
-- Capture every:
-  `capture_every = max(1, int(1.0 / (dt * video_fps)))`
-
----
-
-## 4. Logging subsystem (per-step JSON + export)
-
-### 4.1 Requirements
-- At every simulation step:
-  - accumulate fields into a JSON-like dict
-  - **commit** it as a record (stored in memory)
-- Provide:
-  - JSON save/load
-  - JSON -> `pandas.DataFrame` (table)
-
-### 4.2 Reference implementation
-
-```python
-# src/logging/sim_logger.py
-import json
-from pathlib import Path
-import pandas as pd
-
-class SimLogger:
-    def __init__(self):
-        self._current: dict = {}
-        self._records: list[dict] = []
-
-    def log(self, data: dict):
-        """Accumulate fields during a single simulation step."""
-        self._current.update(data)
-
-    def commit(self, t: float):
-        """Seal the current step record. Called once per step by the wrapper."""
-        self._current["t"] = t
-        self._records.append(dict(self._current))
-        self._current = {}
-
-    def to_dataframe(self) -> pd.DataFrame:
-        return pd.json_normalize(self._records)
-
-    def save(self, path: str):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self._records, f, indent=2)
-
-    @staticmethod
-    def load(path: str) -> pd.DataFrame:
-        with open(path) as f:
-            return pd.json_normalize(json.load(f))
-```
-
----
-
-## 5. URDF-only loading into MuJoCo
-
-### 5.1 Requirement
-The simulation must start from a **URDF path** (e.g. `models/urdf/unicycle.urdf`), and MuJoCo must be initialized from that.
-
-We will centralize this in `src/simulation/urdf_loader.py` so all wrappers use the same loading logic.
-
-### 5.2 Expected API (design)
-```python
-# src/simulation/urdf_loader.py
-# Goal: one function that returns (model, data) from a URDF path + optional assets root.
-#
-# def load_mujoco_model_from_urdf(urdf_path: str, *, assets_dir: str | None = None) -> mujoco.MjModel:
-#     ...
-```
-
-Implementation details depend on the chosen URDF->MuJoCo loading strategy, but **the rest of the project must not care**: wrappers only call the loader and get a ready `MjModel`.
-
----
-
-## 6. Base simulation wrapper (MuJoCo)
-
-### 6.1 Responsibilities
-- Load model from **URDF path** via the URDF loader
-- Initialize `MjModel` / `MjData`
-- Run stepping loop with `tqdm`
-- Call `_loop_step(t, step)` every step (user-defined logic)
-- Step physics via `mujoco.mj_step(...)`
-- Commit log every step
-
-```python
-# src/simulation/base_sim.py
-from abc import ABC
-import mujoco
-from tqdm import tqdm
-from src.logging.sim_logger import SimLogger
-from src.simulation.urdf_loader import load_mujoco_model_from_urdf
-
-class BaseSim(ABC):
-    def __init__(self, config: dict):
-        self.cfg = config
-        self.dt = float(config["dt"])
-        self.t_end = float(config["t_end"])
-        self.logger = SimLogger()
-
-        # URDF-only constraint
-        self.urdf_path = config["urdf_path"]
-        self.model = load_mujoco_model_from_urdf(self.urdf_path, assets_dir=config.get("assets_dir"))
-        self.model.opt.timestep = self.dt
-        self.data = mujoco.MjData(self.model)
-
-    # --- override this ---
-    def _loop_step(self, t: float, step: int):
-        """
-        Apply controls, read state, call self.logger.log(dict).
-        Do NOT call mj_step here — wrapper does it.
-        """
-        pass
-
-    def reset(self):
-        mujoco.mj_resetData(self.model, self.data)
-
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-            t = i * self.dt
-            self._loop_step(t, i)
-            mujoco.mj_step(self.model, self.data)
-            self.logger.commit(t)
-        self._teardown()
-
-    def _teardown(self):
-        pass
-
-    def to_dataframe(self):
-        return self.logger.to_dataframe()
-
-    def save(self, path: str):
-        self.logger.save(path)
-```
-
----
-
-## 7. Specific wrappers
-
-### 7.1 Headless wrapper (fast)
-```python
-# src/simulation/headless_sim.py
-from .base_sim import BaseSim
-
-class HeadlessSim(BaseSim):
-    """Pure physics, no rendering. Use for optimization and batch runs."""
-    pass
-```
-
-### 7.2 Video wrapper (offscreen render -> mp4)
-Key properties:
-- decoupled video FPS
-- capture every N steps
-- uses `imageio[ffmpeg]`
-- `tqdm` progress bar remains on the simulation loop
-
-```python
-# src/simulation/video_sim.py
-import pathlib
-import mujoco
-import imageio
-from .base_sim import BaseSim
-
-class VideoSim(BaseSim):
-    """
-    Offscreen rendering via mujoco.Renderer.
-    Video FPS and simulation FPS are independent.
-    """
-    def __init__(self, config: dict):
-        super().__init__(config)
-        self.video_fps = int(config.get("video_fps", 30))
-        self.video_path = config.get("video_path", "videos/output.mp4")
-        self.width = int(config.get("video_w", 1280))
-        self.height = int(config.get("video_h", 720))
-
-        self.capture_every = max(1, int(1.0 / (self.dt * self.video_fps)))
-        self._frames = []
-
-        self._renderer = mujoco.Renderer(self.model, self.height, self.width)
-
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        from tqdm import tqdm
-        for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-            t = i * self.dt
-            self._loop_step(t, i)
-            mujoco.mj_step(self.model, self.data)
-            self.logger.commit(t)
-            if i % self.capture_every == 0:
-                self._capture_frame()
-        self._write_video()
-        self._teardown()
-
-    def _capture_frame(self):
-        self._renderer.update_scene(self.data)
-        frame = self._renderer.render()   # HxWx3 uint8 RGB
-        self._frames.append(frame)
-
-    def _write_video(self):
-        pathlib.Path(self.video_path).parent.mkdir(parents=True, exist_ok=True)
-        imageio.mimwrite(self.video_path, self._frames, fps=self.video_fps)
-
-    def _teardown(self):
-        self._renderer.close()
-```
-
-### 7.3 Interactive viewer wrapper (debugging)
-```python
-# src/simulation/viewer_sim.py
-import mujoco
-import mujoco.viewer
-from tqdm import tqdm
-from .base_sim import BaseSim
-
-class ViewerSim(BaseSim):
-    """Real-time interactive viewer. Not suitable for batch runs."""
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
-            for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-                t = i * self.dt
-                self._loop_step(t, i)
-                mujoco.mj_step(self.model, self.data)
-                self.logger.commit(t)
-                viewer.sync()
-```
-
----
-
-## 8. Config system (YAML + optional validation)
-
-Example:
-
-```yaml
-# config/unicycle.yaml
-urdf_path: "models/urdf/unicycle.urdf"
-assets_dir: "models/assets"
-
-dt: 0.005
-t_end: 20.0
-
-video_fps: 30
-video_path: "videos/unicycle_run.mp4"
-video_w: 1280
-video_h: 720
-
-control:
-  k1: 1.0
-  k2: 2.0
-  lookahead: 0.5
-```
-
-Loader:
-
-```python
-# src/utils/config.py
-import yaml
-
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-```
-
----
-
-## Running Notebooks
-
-Quick steps to run the notebooks included in `notebooks/`.
-
-- **Activate the project virtual environment** (example):
-
-```bash
-source .venv/bin/activate
-# or (if your venv is elsewhere)
-source mcav_project/.venv/bin/activate
-```
-
-- **Start an interactive session** (recommended):
-
-```bash
-jupyter lab
-# or
-jupyter notebook
-```
-
-Open the notebook you want from the `notebooks/` folder and run cells via the UI.
-
-- **Run a notebook headless (non-interactive)** — executes all cells and writes an executed copy:
-
-```bash
-jupyter nbconvert --to notebook --execute notebooks/<NOTEBOOK>.ipynb --output executed/<NOTEBOOK>.ipynb
-```
-
-Replace `<NOTEBOOK>` with the filename (without path). Example:
-
-```bash
-jupyter nbconvert --to notebook --execute notebooks/quadcopter_kinematic.ipynb --output executed/quadcopter_kinematic.ipynb
-```
-
-Notebooks included in this repo (root `notebooks/`):
-
-- `quadcopter_kinematic.ipynb`
-- `quadcopter_lyapunov_circle.ipynb`
-- `unicycle_circle.ipynb`
-- `unicycle_fall_north.ipynb`
-- `unicycle_lyapunov_circle_fixed.ipynb`
-- `unicycle_lyapunov_circle.ipynb`
-
-Notes:
-- Ensure dependencies are installed in the active environment (see "Tooling & environment management" above).
-- To ensure the notebook kernel matches the venv, you can (once) register the kernel:
-
-```bash
-python -m ipykernel install --user --name mcav_project --display-name "mcav_project"
-```
-
-The headless `nbconvert` command is useful for CI or automated runs; interactive `jupyter lab` is preferred for exploration and plotting.
-
-
-## 9. Symbolic layer (SymPy)
-
-Keep derivations in `.py` modules so notebooks can import them (avoid re-deriving).
-
-```python
-# src/symbolic/kinematics.py
-from sympy import symbols, Matrix, cos, sin
-
-def unicycle_model():
-    x, y, theta, v, omega = symbols("x y θ v ω")
-    f = Matrix([v*cos(theta), v*sin(theta), omega])
-    return {"state": (x, y, theta), "input": (v, omega), "f": f}
-```
-
----
-
-## 10. Plotting + LaTeX report pipeline
-
-- Notebooks produce plots
-- Save plots to `report/figures/*.pdf`
-- LaTeX includes them
-
-```python
-# src/utils/plotting.py
-import matplotlib.pyplot as plt
-
-def set_style():
-    plt.rcParams.update({
-        "text.usetex": True,
-        "font.family": "serif",
-        "figure.dpi": 150,
-    })
-
-def save_for_report(fig, name: str):
-    fig.savefig(f"report/figures/{name}.pdf", bbox_inches="tight")
-```
-
----
-
-## 11. Optimization
-
-Use **Optuna** for parameter tuning:
-- run `HeadlessSim` in the objective function
-- define a scalar metric (e.g., mean tracking error, settling time, energy)
-- enable progress bars
-
----
-
-## 12. Iterative roadmap
-
-1. **Unicycle**
-   - symbolic model + Lyapunov candidate
-   - path-following simulation
-   - logging + plots + initial report section
-
-2. **Lyapunov refinements**
-   - robustness experiments
-   - parameter sweeps + Optuna tuning
-
-3. **Quadrotor**
-   - URDF model + stabilization + trajectory tracking
-   - logging/plots/report update
-
-4. **Formation + cooperative tracking**
-   - N vehicles, formation constraints
-   - scalable experiments and reproducible report figures
-````
 
 ### `pyproject.toml`
 
@@ -1916,40 +576,672 @@ Use **Optuna** for parameter tuning:
 [project]
 name = "mcav-project"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Geometric cascade control of a quadrotor in MuJoCo, with symbolically verified stability analysis"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "imageio>=2.37.3",
-    "imageio-ffmpeg>=0.6.0",
+    "cvxpy>=1.9.3",
+    "imageio[ffmpeg]>=2.38.1",
     "ipykernel>=7.2.0",
-    "ipython>=9.13.0",
-    "ipywidgets>=8.1.8",
     "joblib>=1.5.3",
     "jupyterlab>=4.5.7",
-    "marker-pdf>=1.10.2",
     "matplotlib>=3.10.9",
     "mujoco>=3.9.0",
     "numpy>=2.4.6",
     "pandas>=3.0.3",
-    "plotly>=6.7.0",
-    "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
     "scipy>=1.17.1",
-    "streamlit>=1.58.0",
-    "streamlit-ace>=0.1.1",
     "sympy>=1.14.0",
-    "tqdm>=4.67.3",
 ]
-[tool.uv]
-environments = ["sys_platform == 'darwin'"]
-
 [dependency-groups]
 dev = [
     "black>=26.5.1",
+    "pybind11-stubgen>=3.0.0",
     "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]
+[tool.pyright]
+stubPath = "typings"
+```
+
+### `results/monte_carlo.csv`
+
+```csv
+offset,angle_deg,V2_0,converged,hit_ground,feasible
+1.765391856987295,170.86721639145446,0.8168327899206725,False,True,False
+1.5345364678253204,115.55683541803245,0.3995005666703369,True,False,True
+1.1460711998005746,167.3330914220253,0.8594229973005151,False,True,False
+1.9770218719806678,120.43926796446316,0.579557836900725,True,False,True
+1.5511274480671222,121.93761903114938,0.4036947091391576,True,False,True
+1.790354556997683,122.68582444748041,0.7033432340394535,True,False,True
+1.623433596279821,21.99279174212765,0.0948514774964159,True,False,True
+0.8642556668924182,44.209695695793364,0.06061518970441651,True,False,True
+1.237157908510749,11.513828324560862,0.017030606628606077,True,False,True
+0.7959182009505364,163.18922018733156,0.8722840140049574,False,True,False
+1.1513458847061553,174.040456128853,0.8885212335829368,False,True,True
+1.1699710568790522,105.88591230075836,0.12575900083129954,True,False,True
+1.4916399542697378,27.29864034459153,0.05911234619909985,True,False,True
+1.370395451679846,21.76295570697524,0.014473322179973103,True,False,True
+1.4261128670296452,78.07453099556591,0.27372473131946656,True,False,True
+1.8696085572055128,68.39180477854033,0.2769430998556031,True,False,True
+0.5549195233202836,34.23998653643697,0.019350555548784378,True,False,True
+0.9387079288998075,15.613714176210102,0.006620350975997785,True,False,True
+1.8626524090708845,113.29301917012901,0.5403206303622178,True,False,True
+1.6225606966929835,138.65226537991316,0.708383345661744,True,False,True
+1.5199000844564061,11.039999100747494,0.0613990439418423,True,False,True
+1.28836525385228,54.16494791157861,0.028983563306676143,True,False,True
+1.6309798151452894,52.57474971119424,0.0444981022463839,True,False,True
+1.2102154739245876,94.881985816735,0.3400255400833528,True,False,True
+1.9007278557016187,105.79174476176046,0.5121358542759749,True,False,True
+1.8750493676730036,71.8346347207372,0.20477820863396876,True,False,True
+1.3706131597323084,151.54010224984293,0.4013953910474357,True,False,True
+0.580876512638975,68.3882617052402,0.2774803101683457,True,False,True
+1.9221184335606316,53.08851597453224,0.14669358293596604,True,False,True
+1.3368871017304078,134.17677641512208,0.7102832641292625,True,False,True
+1.7385654367280414,147.33803771752267,0.7841045303157251,True,False,True
+1.9005763903071835,153.5447490547817,0.8917883295397797,True,False,True
+1.8553674422035686,29.624434149881925,0.04905208528967047,True,False,True
+1.903779018940441,34.46758821494651,0.029371856409637083,True,False,True
+1.5758180856893182,80.95559168749709,0.4152663397568628,True,False,True
+1.888793025474673,169.32434534250646,0.9192428172512127,False,True,False
+1.5451807970994307,108.56279079352217,0.7067614947462083,True,False,True
+1.2827183819024486,109.08803780997164,0.11018737817105083,True,False,True
+1.5669974122559922,57.16793151774143,0.2814683668432417,True,False,True
+1.389574354335003,173.3358556702516,0.5885208717178803,True,False,True
+1.830864309769248,31.956073569515233,0.041802215327560725,True,False,True
+1.8808483040375537,97.87532515118305,0.5228248535010538,True,False,True
+1.041377144201308,118.10719156111159,0.610961040916697,True,False,True
+1.0956895802331732,141.74774285913372,0.278908169602271,True,False,True
+1.4532689596862436,142.3570020150361,0.8138159019924216,True,False,True
+1.5475564657153502,67.64087183947325,0.07717073132992783,True,False,True
+1.9704464459379951,47.42493009646627,0.04494478914127076,True,False,True
+1.9603470852684912,171.45856573441662,0.23937227008518516,True,False,True
+1.9777811254650048,96.7634791001409,0.42537285687410115,True,False,True
+1.8006215404148604,49.364046033092315,0.14444094963675075,True,False,True
+1.7563380787172145,24.200245075524073,0.011403603621598651,True,False,True
+1.2932847438518282,140.5578117279611,0.5462345053409942,True,False,True
+1.4392364951711778,148.49089995138186,0.5488194397856125,True,False,True
+0.2779201880539708,99.71436462419716,0.5297476228151715,True,False,True
+1.881787369286967,67.19855672915024,0.19268130791839352,True,False,True
+1.3022997921779673,115.45056051999423,0.5511556633914897,True,False,True
+0.85918468725197,171.51865944323742,0.21909880575349214,True,False,True
+1.3616691494581115,101.20620063835831,0.3727661213304588,True,False,True
+1.3724830902415874,137.74293319974728,0.6904410787521844,True,False,True
+1.7958634524430148,154.359971518167,0.41529950071746696,True,False,True
+0.3574025793568845,132.44937707184326,0.6789635011453832,True,False,True
+1.22540911617591,85.14683205931648,0.3723106578949636,True,False,True
+1.9284503640538235,31.20532537212933,0.014331758733073704,True,False,True
+1.8981523086025183,121.89560472240396,0.20103772510988166,True,False,True
+1.7136445704225278,145.51179472817165,0.7100985574565386,True,False,True
+1.647483049729321,168.50038228660253,0.6352214884657952,True,False,True
+1.2121316264861044,26.64869922556441,0.06027305934096549,True,False,True
+1.9130022167278753,19.89294219360802,0.005949616486571434,True,False,True
+1.8257384254577542,111.34158394406646,0.3262373812533165,True,False,True
+1.6009709295516799,144.74346598720626,0.23938267107120592,True,False,True
+1.0880655843362401,13.366626597887565,0.012642223673174493,True,False,True
+1.1997021596922424,107.45558228338663,0.4851234889881892,True,False,True
+1.4477329922310187,46.616441360774964,0.10296175466945703,True,False,True
+1.3836528924620435,174.86171159121972,0.5196835348049783,True,False,True
+0.7875405077742279,63.24125633795162,0.27568415673236274,True,False,True
+1.4814016007862778,14.34263990956763,0.04519078541712101,True,False,True
+1.531161236011492,136.96995668556642,0.7008690431289045,True,False,True
+1.3193627817507123,52.625068962371785,0.21919948087248378,True,False,True
+1.4540785939711538,73.34421546715733,0.11275048228323402,True,False,True
+1.3853960867872994,22.845101561183277,0.005736782663619003,True,False,True
+1.4445990366188504,57.90352188887469,0.034348524991592785,True,False,True
+1.704514848228725,23.327924594859546,0.051242193129566335,True,False,True
+1.5845711718287405,45.037023109113605,0.04022288185193388,True,False,True
+1.1648890705420174,101.27621041128056,0.6479385167203376,True,False,True
+1.852961145264506,52.31873629178805,0.16274682902602544,True,False,True
+1.6012349853554508,116.80781248784366,0.7046949168799294,True,False,True
+1.5420569136865754,157.69777233050587,0.29820165301170487,True,False,True
+1.7870199802116826,100.87203546670683,0.5604008841592003,True,False,True
+1.818845585971,5.018923235539765,0.0017730516777860065,True,False,True
+1.8938374669699691,167.96533459111566,0.6230871783588101,True,False,True
+1.8652954594581903,34.61920494258245,0.17404330524940465,True,False,True
+1.749210183977581,60.576749023518246,0.32926443151885415,True,False,True
+1.793498639877283,92.13965811996238,0.22945323444516516,True,False,True
+1.0792286896669216,108.29208771615944,0.08511691171293054,True,False,True
+1.7751762668421138,59.864139298141694,0.1270874553545228,True,False,True
+1.267365636673077,77.08180935051924,0.3063626154484199,True,False,True
+1.27294910902201,109.69380410287982,0.38471839093861643,True,False,True
+0.9868457544155697,79.99708032451474,0.22915310411400316,True,False,True
+1.4698070319619403,49.589005033082785,0.08983365551056749,True,False,True
+0.5417745054476425,71.87977011819542,0.15556978832041915,True,False,True
+1.7386571182340773,67.3331830777007,0.15428486178819706,True,False,True
+1.8155870007905766,51.09208199849691,0.2786156003452564,True,False,True
+1.8375246702417256,105.12127640858718,0.4053915784013207,True,False,True
+1.0101943573267291,89.64546623184536,0.32045883651553875,True,False,True
+1.7245226394435382,72.01747166840056,0.1867888254824181,True,False,True
+1.8857986325280092,124.14988780265948,0.08194167358134528,True,False,True
+0.6601997546417689,142.19721667179925,0.8156786363863752,True,False,True
+1.1565348951097134,113.54809166680538,0.6306902379926049,True,False,True
+1.2891014783690329,59.70748856975789,0.029556131350804832,True,False,True
+1.546105607091086,163.91395824724123,0.5182968374657109,True,False,True
+1.1126155041859045,18.237456486365364,0.045401551286379724,True,False,True
+1.6275156485510358,140.96951511909722,0.30053636300678116,True,False,True
+1.4012936924186337,73.72341193393976,0.3473336107971349,True,False,True
+1.737006753488071,69.42806807341398,0.336842865588731,True,False,True
+1.6198816716209121,147.55816353115867,0.5107099306989737,True,False,True
+1.7641448048779373,114.6770273975547,0.16755038554430374,True,False,True
+1.2537441647475944,170.42788101622818,0.9037374388053052,False,True,True
+1.7817655598221773,153.65383758047037,0.836067089321881,False,True,False
+1.804627145180476,20.347144338749793,0.012257722655982102,True,False,True
+1.7941932325257828,88.0520545338327,0.24402383418384327,True,False,True
+0.8181281083442264,134.3315559672099,0.2393135699481806,True,False,True
+1.9634358275218589,14.447602018078392,0.08133470529128942,True,False,True
+1.6648985325861343,94.93375331298296,0.3497348240092512,True,False,True
+1.2963512315001984,173.73954124791607,0.737817583737757,True,False,True
+1.5143936259380646,41.82568821149064,0.06818721289309584,True,False,True
+1.6058138008046405,20.438702427896608,0.004041441031847172,True,False,True
+1.6059876360859455,50.648782867199316,0.2160027862594741,True,False,True
+1.2564821187719186,60.25907679883224,0.1548862520500434,True,False,True
+1.28457394985999,50.01056236370047,0.04951505925676288,True,False,True
+1.427468329039688,75.6154667331336,0.31330792771892796,True,False,True
+1.8417601463654982,145.84657687248327,0.2909118620883327,True,False,True
+1.5182297604846355,90.54198314349613,0.49440640027861277,True,False,True
+0.6760982426048588,103.1199230522725,0.42846204986127484,True,False,True
+1.5351235588044814,19.0812966845019,0.008332883716796325,True,False,True
+1.172257267911937,11.340840970507372,0.0019058395179540719,True,False,True
+0.46307205291461123,166.42442712623114,0.7743096717598573,True,False,True
+1.9845679225994486,60.74172152888644,0.16966829220246615,True,False,True
+1.3294583567699347,165.78302638278785,0.8959999216014718,False,True,True
+1.6261298232304413,58.73484735372673,0.26312433334092983,True,False,True
+1.4203817906451406,111.92583193812837,0.5461903085662502,True,False,True
+0.7531740155880101,115.76736661193353,0.4975991532118602,True,False,True
+1.9316107432064578,15.748423654643508,0.09928818364393449,True,False,True
+1.9561505881868675,12.414113169258064,0.046103759531239255,True,False,True
+1.1425381364720169,77.30162376733688,0.33692574291068317,True,False,True
+1.4953896448840518,22.274535524507545,0.005572134564181841,True,False,True
+1.4405048987862945,51.770155831623086,0.02028385541525976,True,False,True
+1.1018525090932385,34.27468241241739,0.021233352184010658,True,False,True
+1.7427767658997395,54.764686378189374,0.09361573710072496,True,False,True
+1.842601912166949,79.78891790331744,0.4032300669144294,True,False,True
+1.8249192824265352,54.48307172768847,0.10667767498372219,True,False,True
+1.7546289041336602,58.70213704802168,0.06791017143865646,True,False,True
+0.5191545344890393,85.04463406593764,0.17183994379418285,True,False,True
+1.2246697552435135,119.47754067754366,0.09795626596927626,True,False,True
+1.6027049376341387,7.350062623676772,0.017954067235766768,True,False,True
+1.7782068334829564,174.56410258749133,0.8260931460712604,True,False,True
+1.4567484114072606,75.39097853236203,0.4293742725256137,True,False,True
+1.5317860409534287,161.5301019191189,0.7141494888814897,True,False,True
+1.8876159618331938,1.267492902501935,0.003294517597845029,True,False,True
+0.5732468913238451,10.06014288245387,0.0050908007237526086,True,False,True
+1.2904049893680698,17.349800661402057,0.008189851369110726,True,False,True
+1.3237225169314044,159.72947455121164,0.8346034702483084,False,True,True
+1.9951767920889376,72.10389198146207,0.344860186647484,True,False,True
+1.2209937436893443,148.11747540905387,0.10214975015894286,True,False,True
+0.7223440211488136,121.55997617809392,0.5884938954295079,True,False,True
+1.4935595945649631,15.367109691303058,0.03077867251862751,True,False,True
+1.732059528422651,63.297517957691944,0.2924668825180136,True,False,True
+1.070668002010807,58.00606060891648,0.187858472713684,True,False,True
+1.8868490330320078,79.28688045896494,0.33699691126717607,True,False,True
+1.162657992681998,131.9175373924269,0.6857063454647769,True,False,True
+1.7794193010804713,14.632833093386466,0.017767333603261534,True,False,True
+1.089841475483832,162.1127687541349,0.846196769735107,False,True,False
+1.9178195482896858,83.40459676037416,0.2577536923975088,True,False,True
+1.1721754490294405,64.01250587787146,0.08710028722675499,True,False,True
+1.8019393808021862,122.0972941211015,0.3419754428241371,True,False,True
+1.8860991265708407,48.38755030094104,0.08161731708383833,True,False,True
+1.2681762967245815,124.6824869512711,0.7675669125071221,True,False,True
+0.9055656919035523,72.78893052467504,0.40944535516742714,True,False,True
+1.6737763492135933,83.67739642651665,0.13201639807518123,True,False,True
+1.586364355290393,33.093873800211206,0.13038341357710007,True,False,True
+1.5652068640890349,35.557312308417615,0.05872429679623793,True,False,True
+1.8420820802464895,150.74397380829328,0.8230609839251173,False,True,True
+1.547359664254414,100.85647817605332,0.6056394063841555,True,False,True
+1.5842532474496003,73.89876176993734,0.4234333362697028,True,False,True
+1.573807147770448,135.6191586223523,0.6529638516809663,True,False,True
+1.537810041249537,159.61839491219374,0.881433772937697,False,True,True
+1.4806132935439609,27.800188028846783,0.03254363651302608,True,False,True
+1.0878086107524145,174.64995832397156,0.6416368684350833,True,False,True
+1.3318530370625687,2.474923756359729,0.004962410400231888,True,False,True
+1.2844564168711803,107.44378698896607,0.16064823785032303,True,False,True
+1.256856757766747,46.13784581101032,0.014635849634981768,True,False,True
+1.843252547162121,44.12332988232357,0.10124770425424062,True,False,True
+0.969868856229547,86.56444996603442,0.08623363688584418,True,False,True
+1.1800791723784727,105.73920757494386,0.5964298988349046,True,False,True
+1.6148755518496771,76.44971715180105,0.31349941062647574,True,False,True
+1.3572688296665516,124.94601914195431,0.6429364901722338,True,False,True
+1.2431739557391601,166.3006866817121,0.5057787908300452,True,False,True
+1.4401736188818741,29.55272277836355,0.10981499362997399,True,False,True
+1.5895372152771543,41.57745386299008,0.02638953159920348,True,False,True
+1.753834407136183,106.67372040004472,0.5344428263094858,True,False,True
+1.9813072345210683,71.79541689344906,0.24893517808393512,True,False,True
+1.8964949690046593,55.19264116371494,0.12667226245912944,True,False,True
+1.509559569849079,88.28709238835022,0.5682275506337466,True,False,True
+1.5344751029152086,121.94624967359486,0.3994404611001605,True,False,True
+1.4926614326904444,159.01706363200432,0.19423231994968315,True,False,True
+1.2410495780305588,164.6521275284982,0.6732171477790985,True,False,True
+1.9673122889053125,143.41844251538086,0.754449316831698,True,False,True
+0.8189625434510388,60.65664673618486,0.11126195252883271,True,False,True
+1.1791726357654853,154.67737620492392,0.8345647964490807,True,False,True
+1.7430581099226967,124.23980262555092,0.6220822655063221,True,False,True
+1.6770265064796344,30.536335425875656,0.03380843466917268,True,False,True
+1.306316049114505,166.81670828389488,0.6405208902077234,True,False,True
+1.957054175234495,43.28494554453428,0.10839493352165261,True,False,True
+1.4851330638977203,119.37487161950052,0.10794649301410962,True,False,True
+1.6833470535215567,121.5425857719174,0.6185189487076602,True,False,True
+0.8996750906519825,158.9110872947471,0.4133085883947518,True,False,True
+1.924440564584958,116.63059359935406,0.5092667115934781,True,False,True
+0.9375205097279472,172.04866511812116,0.7010143671156892,True,False,True
+1.4662653709096305,10.452756467448376,0.019705743357216525,True,False,True
+1.9206061630143942,6.555396623877174,0.009962242487705233,True,False,True
+1.962635639239029,34.2333583577266,0.04421366224637048,True,False,True
+1.9338178865436766,100.67116845449937,0.5918340544018461,True,False,True
+1.8777407163639734,74.18484293190023,0.31155823954982714,True,False,True
+1.2312192381197997,14.439547289904386,0.007858085764017819,True,False,True
+0.6339935342480217,35.35160334573926,0.009095894043470899,True,False,True
+1.5346704463404757,101.36834600783529,0.3300759014738348,True,False,True
+0.7965668953360885,70.43300407942948,0.22340285241323116,True,False,True
+1.9733355664295125,133.6015858251197,0.4170410991498391,True,False,True
+0.40309996788954644,81.71880204173871,0.482489155080277,True,False,True
+1.375746331095924,153.60397598778488,0.3945928190005001,True,False,True
+1.1759900304377502,132.78219450284863,0.4730635589128927,True,False,True
+0.4784548476351933,86.52726137518286,0.12149477818761431,True,False,True
+1.5864247927020008,62.64764498028787,0.16039927429877313,True,False,True
+0.8473497336503074,37.42225613705047,0.1760635817190147,True,False,True
+1.9309352539459166,51.11342966562716,0.10030171238379072,True,False,True
+1.7652836424002645,62.13860443278,0.17215715039700882,True,False,True
+1.4358118165877063,63.21635299202078,0.20023405454779036,True,False,True
+1.8882481077710656,31.327686348440675,0.08797928836491607,True,False,True
+1.8542014169005203,82.81199900772386,0.45835461303852254,True,False,True
+1.377098282368318,19.570733593180332,0.01160947282920779,True,False,True
+1.8924748839328187,152.001215252119,0.8503992346822171,False,True,False
+1.95177855669227,96.3106434275109,0.5877832502676544,True,False,True
+1.705304525790938,16.641415352494704,0.0022690472277782057,True,False,True
+1.4118490833265565,57.36867396622094,0.17160145274317237,True,False,True
+1.9313978066781423,44.666459586068086,0.028330776318349005,True,False,True
+1.961161641926568,27.327130990211916,0.09688081708941632,True,False,True
+1.4058043535858389,84.11186588558827,0.18903730079447187,True,False,True
+0.8837987381876427,32.07258194238521,0.03042591044434422,True,False,True
+1.9076772393616395,26.54281338393932,0.04489067193427823,True,False,True
+1.745522922019967,122.90032007718973,0.6335002191431944,True,False,True
+1.228922888539743,75.1763616959968,0.491636336250014,True,False,True
+1.6552836693744888,117.60981866505172,0.3701790360228367,True,False,True
+1.3509457210491171,82.24531784175132,0.1789131234678198,True,False,True
+1.9446054729486149,88.19652521579918,0.514396807250814,True,False,True
+1.398794494367239,54.371188658890546,0.12218848951564862,True,False,True
+1.1622666978893712,74.60589129124011,0.1863276817999709,True,False,True
+0.7018139287548446,84.15723008406553,0.31305359799012783,True,False,True
+1.399342667950049,59.920349521968646,0.1794747258689758,True,False,True
+1.9929399999132493,144.58718001070946,0.8208637989697639,False,True,True
+1.2043173141250907,43.098441296336944,0.19750412522584468,True,False,True
+1.5417053215370997,38.594554121727576,0.13355166475602734,True,False,True
+1.9812287854822472,60.24375691113695,0.35256465371383355,True,False,True
+0.37730645953943115,137.4068994871969,0.7707369089359076,True,False,True
+1.3314810552824832,148.32427672497354,0.7801024558202573,True,False,True
+1.8728809425320638,98.87860444141408,0.34953064854253063,True,False,True
+0.9149174322939908,63.12008898313511,0.283732289956196,True,False,True
+1.9510070636955477,113.54168444347334,0.6094700621118999,True,False,True
+1.882993147333642,144.63251011200376,0.11152518337065508,True,False,True
+1.0459902296647527,42.50527822732462,0.1146918287237579,True,False,True
+1.6796616244725004,116.82065642134096,0.31959175205940005,True,False,True
+1.6440848509618802,124.22784111423938,0.7221844125781501,True,False,True
+1.7704590037028687,68.29343465735028,0.2955905297878844,True,False,True
+1.3489654218296985,25.34233398252328,0.10273971382532265,True,False,True
+1.4538915496734746,106.30239306928496,0.3979805228816653,True,False,True
+1.2442742404477023,36.77961014729355,0.10343486734541892,True,False,True
+1.326705236972704,64.40235541522726,0.07274066251922104,True,False,True
+1.1202396221101159,95.29391750081015,0.1080344704400671,True,False,True
+1.9341225783783447,168.47251917968657,0.44430390431359573,True,False,True
+1.9219425847755418,25.64154461889177,0.03197412938178693,True,False,True
+1.4227791829621423,12.896353861517133,0.012713655049569858,True,False,True
+1.7700543357416645,94.30076319148016,0.24150861352937605,True,False,True
+1.5770424945431913,165.04003217547816,0.1786058178123709,True,False,True
+1.309644604331191,8.085036950318356,0.02788004642924532,True,False,True
+1.4089282642478074,112.3706112050678,0.3895914723108891,True,False,True
+1.9764953065974469,4.774663746844499,0.007332981032862958,True,False,True
+1.3979036115160897,96.43346536672841,0.5234400031466485,True,False,True
+1.666630890546961,20.85369917297351,0.037444282100666165,True,False,True
+1.9627107354422975,115.34626530711631,0.264475301605388,True,False,True
+1.335276860714436,63.17250918911063,0.09592260012481081,True,False,True
+1.863525922578904,114.54973503615965,0.11347002993777767,True,False,True
+0.9699905465748576,45.19353297109299,0.2298449269125375,True,False,True
+1.803557178001932,13.110046115069267,0.006142924821074518,True,False,True
+1.8617947821880036,31.829603570606807,0.0669780277514979,True,False,True
+1.8851614674892094,47.93521957746641,0.11559933591597465,True,False,True
+1.9832284259769464,28.834349072096707,0.039000772046276645,True,False,True
+1.785010282263863,34.72596678258689,0.1054241750623984,True,False,True
+1.9846904900509723,95.23159553690266,0.5077234213488329,True,False,True
+1.3058565503244568,76.58732988224048,0.10174177161788264,True,False,True
+1.6098978905302845,144.42758524612344,0.36796703799387526,True,False,True
+1.196423028404766,87.08524810444972,0.41143347605027014,True,False,True
+0.8742627087849049,94.41400119265256,0.4915581517303106,True,False,True
+1.5199542397091779,124.27226152876766,0.3201776814464985,True,False,True
+1.7922966026467018,149.34744984802848,0.6733795539249399,True,False,True
+1.8398100499945889,102.32277014543236,0.5370341840654899,True,False,True
+0.5141399256713517,6.443876818547696,0.01337920566240727,True,False,True
+1.9607126904438108,80.36229276456898,0.29493771281601444,True,False,True
+1.255256302150361,5.647219286253177,0.015705246587580032,True,False,True
+1.3271606810905952,105.85389258986307,0.39620511229476185,True,False,True
+1.8813781850710853,11.383339045566949,0.007880156897045527,True,False,True
+1.9268324693829186,94.43158676603215,0.2609374681390729,True,False,True
+1.8061001808855077,26.23619998645234,0.05081947970932705,True,False,True
+1.3860056243734657,149.71672040198627,0.6599841652669729,True,False,True
+1.54706205573036,16.502175348153276,0.011772058863400606,True,False,True
+1.8830289796164812,115.3986256152551,0.7067061745789084,True,False,True
+1.419202809816848,123.16625938092795,0.7015077422071081,True,False,True
+1.8607312084585108,48.157828886572226,0.16992550641230086,True,False,True
+1.8426124332829363,103.73540146199551,0.44942756639433007,True,False,True
+1.5535294678361973,57.735729147629904,0.2381409543953871,True,False,True
+1.9285118672051722,45.31644516266707,0.013962044338720558,True,False,True
+1.454352050570995,45.4394689358045,0.13213007987459124,True,False,True
+1.817052201933427,2.7730416096468677,0.0019209489581533338,True,False,True
+1.7233222461602227,117.76379799848813,0.6226317863498035,True,False,True
+1.3838284312304647,12.571044712569394,0.0023329252653866046,True,False,True
+1.620348399616001,34.47684451050685,0.1272509246307015,True,False,True
+1.6925066983131654,15.215968216851703,0.0668066437077372,True,False,True
+1.625453272239228,140.74895661489538,0.574399535721865,True,False,True
+0.9603675555992666,92.65952332244524,0.4088128080833657,True,False,True
+1.994284073727486,81.78734644975042,0.20733007371098336,True,False,True
+1.9774838573496565,102.08124991013334,0.47622469802875383,True,False,True
+0.6692810556592896,141.44759917854984,0.10881155266481474,True,False,True
+1.9621410757959357,109.21497037422202,0.4888412384587459,True,False,True
+1.6200486150864564,89.8234382151017,0.23607702639644262,True,False,True
+1.0018751598317315,54.80409329930096,0.19565243106151917,True,False,True
+1.872413259138335,90.4307947468235,0.27072355994006464,True,False,True
+1.5130302884540259,172.76659130556843,0.10554260074037558,True,False,True
+1.7868929928842494,99.72818847508421,0.4720955713740534,True,False,True
+1.8774609742885597,83.50893170649096,0.3115427181579153,True,False,True
+1.6266773504992433,155.45099432897126,0.6047854427597864,True,False,True
+0.7351585227873343,9.543675904562406,0.006452258577165201,True,False,True
+1.8738586478326986,11.072936862225683,0.047559857071515145,True,False,True
+1.7707522946925955,138.14129192752708,0.7621831143631621,True,False,True
+1.9382046273695765,164.87576989711852,0.40344313554953537,True,False,True
+1.2928795573860412,8.90575156332338,0.04165998133926222,True,False,True
+1.8450924856264221,4.2094111370221485,0.028408993323787653,True,False,True
+1.9115584461815782,1.7072440918274536,0.010309011398472191,True,False,True
+1.4162076973637716,100.96936172702686,0.6398445895195126,True,False,True
+1.4860188417739237,24.110439739746756,0.0684615733097771,True,False,True
+1.3876290600717645,98.23465221932885,0.17813391477451326,True,False,True
+0.3578378175769214,116.16397691097302,0.5917437716693822,True,False,True
+1.2281447241321597,2.720708823069767,0.003572648399819207,True,False,True
+1.3842261318361582,152.2703124159625,0.09602946392884862,True,False,True
+0.9536261921710336,44.20020403640166,0.11225328326708106,True,False,True
+1.8295980851851732,96.94643587733233,0.6115341407249997,True,False,True
+1.5059939329574525,61.897051842555676,0.19450342166274687,True,False,True
+1.656535364344376,60.07172408213765,0.02815303907748883,True,False,True
+1.3155630278232677,70.58727833657471,0.16889419589768018,True,False,True
+1.4232160214173741,0.6494243043735666,0.007944341476132849,True,False,True
+1.8198494816517676,75.03709776212257,0.36004996653791255,True,False,True
+1.5547952439835588,46.37794724708353,0.06878659886866632,True,False,True
+1.6835996339159105,62.54635054767477,0.4036653579172953,True,False,True
+1.5009540775222667,28.507360561169865,0.0557436764440995,True,False,True
+1.6455994139028556,58.60226015744196,0.14172487456337016,True,False,True
+1.929087621953889,122.40088176816644,0.30045436856054364,True,False,True
+1.288500888101827,172.16146240158747,0.15933259132875988,True,False,True
+1.6073226482002365,34.497564234678585,0.0907238827033246,True,False,True
+1.7649397278969436,151.67013117088499,0.8905399227067138,False,True,False
+0.8854941696706922,107.58240010927226,0.5347486225088495,True,False,True
+1.974344016852185,17.675762537905847,0.07207734936391795,True,False,True
+1.5860853185524821,2.5714800742282993,0.01704648991956359,True,False,True
+1.2520388619374934,154.704161002244,0.7851494613681256,False,True,True
+1.8255058345067667,40.96068167217454,0.05264747581301804,True,False,True
+1.8686114767891542,18.59252066294912,0.10359274894075485,True,False,True
+1.7150857822876222,114.72348516429903,0.7347435986775959,True,False,True
+1.9424695040986086,123.65566187964924,0.45151729364061716,True,False,True
+0.8926502441172937,156.63667698373072,0.6948950633083896,True,False,True
+1.6160861560822053,87.5556707754068,0.10338103325907533,True,False,True
+1.8113603195296584,54.59359354124232,0.19144746849037705,True,False,True
+1.942932563755805,55.69433209242713,0.13122813979803855,True,False,True
+1.724845523467505,35.83286876359168,0.17211106783384114,True,False,True
+1.6890290882426182,111.16627708204926,0.08134402506205675,True,False,True
+1.4590122962269232,164.89765915149093,0.3177433580523088,True,False,True
+1.6598287252691855,14.819546542491963,0.0041643912013176135,True,False,True
+1.6433926369564427,67.66141334901023,0.15589441503749937,True,False,True
+1.9345658592741601,61.568609439325066,0.3347372474401607,True,False,True
+1.8773685883746494,14.035239413816242,0.06868612608113854,True,False,True
+1.8067201393652468,104.09365295497156,0.2580809105744876,True,False,True
+1.9478414653069396,172.02632149305495,0.7875011949247325,True,False,True
+0.808910889397991,48.418829893267805,0.07431551960988649,True,False,True
+1.8328277876788284,127.24459785109484,0.2954521227975622,True,False,True
+1.5479241328075766,157.6013346199766,0.2295919777325995,True,False,True
+1.8185769962531606,47.36374369434225,0.26942212150466305,True,False,True
+1.3331551222058176,160.82237632936776,0.7836004130747364,True,False,True
+1.5520550236100834,130.96513189484116,0.3776832186478236,True,False,True
+1.8754672167585082,112.98780907012338,0.3028112929315754,True,False,True
+0.6553341484676961,33.974040907225145,0.04802679526589718,True,False,True
+1.3255331651102347,48.54518468408434,0.22807692670391613,True,False,True
+1.5750953981168272,17.771885870172536,0.02988921160539184,True,False,True
+1.8956518580364092,156.7514681640877,0.8622271087652409,True,False,True
+1.2927137863982092,141.56681597485894,0.7644354590292787,True,False,True
+1.8743169290178046,15.153201552963575,0.022614929418704497,True,False,True
+1.2506888034611403,92.92759268125455,0.534540089172831,True,False,True
+1.343537023036949,37.29237528025499,0.1610972362806886,True,False,True
+1.6424256107664217,133.98412513172264,0.582450616932489,True,False,True
+1.735940864513353,100.29946489506263,0.0725926327369362,True,False,True
+1.9166187550718836,165.44224081794164,0.8515916049732282,False,True,False
+1.916180972021893,127.24922665285047,0.6274313621735802,True,False,True
+1.260192714559803,17.620232190171397,0.047942263540793895,True,False,True
+1.813561897805461,65.2366501362329,0.21610741569452072,True,False,True
+1.7190413093593622,100.84793729730171,0.14402671706315207,True,False,True
+1.4563963580336043,159.57171612912785,0.2736366562398687,True,False,True
+1.8379134077237642,64.91581620965299,0.24516837607329964,True,False,True
+1.9292030480395466,32.8812279978406,0.053490723527981815,True,False,True
+1.5650706943057888,49.579566529878406,0.0931977114559974,True,False,True
+1.9424289164189832,43.428825340122685,0.14451282479015895,True,False,True
+1.0069404019654506,27.03597946795943,0.013686975910864816,True,False,True
+1.0995936520619134,60.18281432610197,0.1715415019308415,True,False,True
+1.8285178826015123,43.57542023629444,0.08570345025612659,True,False,True
+1.3470743204701583,89.33144112823486,0.25157804723657307,True,False,True
+1.6730379403774187,156.49481965177165,0.39541466903395883,True,False,True
+1.5842954279089467,167.0068182818693,0.5972991795655682,True,False,True
+1.0526113433794602,27.898331425124635,0.07698478053152019,True,False,True
+1.8205333221118392,99.65051836752507,0.5095450408553958,True,False,True
+1.810174919456343,117.92393435560311,0.5099914272458922,True,False,True
+1.0512086990610958,26.690161820968747,0.025747173784897614,True,False,True
+1.276127032835724,93.06490029868982,0.04882507498828238,True,False,True
+1.857087736391477,35.00936892091312,0.07796575748367794,True,False,True
+1.939686697526705,63.71259231903689,0.301735296265917,True,False,True
+1.909346466660761,56.68964911021243,0.1163455819488456,True,False,True
+1.5893690349224463,142.61628963013706,0.5661161667425829,True,False,True
+1.4324338776591334,40.96948957397704,0.07985987163533907,True,False,True
+1.5272094155757538,94.51736908914023,0.46285614658377355,True,False,True
+1.1216398059557098,102.47852781517271,0.37243396116197136,True,False,True
+1.5831447751579988,57.72757511946802,0.11822440742359577,True,False,True
+1.2269593045320668,162.6506905069843,0.8582498317423853,False,True,True
+1.0901593721854916,58.12387745243949,0.19094142485712112,True,False,True
+1.4494223450888781,57.08339742904779,0.060941171710330456,True,False,True
+0.7997306734960662,121.20636699638577,0.622599072721036,True,False,True
+1.5553864777725612,85.35580964121021,0.31034310754531524,True,False,True
+1.7725350248314893,126.83955091521675,0.6120769163761473,True,False,True
+1.7337269263977404,26.753571837970853,0.03164452065365232,True,False,True
+1.983367894381239,25.91487606472083,0.06164026494778989,True,False,True
+1.9207654404653463,128.80902343074746,0.32100485790894645,True,False,True
+1.7179204624268332,67.99493839080637,0.06273304726271914,True,False,True
+1.929277044869747,149.99830153592097,0.7947088597796242,False,True,True
+1.5262882270998037,40.86181916307275,0.019061301605518464,True,False,True
+1.8557641488184804,42.04185280571157,0.16294524490771917,True,False,True
+1.3153672394090943,151.06902917486502,0.45944682316005414,True,False,True
+1.6151711490410947,63.29795674951804,0.07518809293010185,True,False,True
+1.9864875587379767,19.21592080342122,0.04177297463179766,True,False,True
+1.6857397158632008,38.55251463748768,0.20536026013800557,True,False,True
+1.5945557654296993,134.67315851774052,0.6832014673612161,True,False,True
+1.8467643207484525,46.4538055159385,0.28113740141405735,True,False,True
+1.3570021848897782,97.26208633232166,0.5160197303518148,True,False,True
+1.8803470168957686,146.05733584321825,0.7780302572190191,True,False,True
+0.529392874271382,106.82398812928454,0.6019727823567126,True,False,True
+1.2398757074713658,131.72082677233686,0.640186469611638,True,False,True
+1.123457024147025,170.9643523082714,0.4827160606647634,True,False,True
+1.272149935205315,52.36193743771143,0.08267312125711587,True,False,True
+1.9630076627364097,153.3370502305692,0.39000163226912665,True,False,True
+0.5760575874322067,96.43584890706863,0.19589118629038252,True,False,True
+1.336996439119552,35.24768623209427,0.16287541110543266,True,False,True
+1.6625159139223613,23.098680778469273,0.06859365572720966,True,False,True
+1.7784166909531591,57.38166204569751,0.19525880920980326,True,False,True
+1.836129162858668,24.090258012710983,0.03206443755831463,True,False,True
+1.4527953252645494,135.05201014581107,0.2799703649092811,True,False,True
+1.2076800801892855,97.55147275094399,0.4108833716497928,True,False,True
+1.8962827240276252,7.740913732720837,0.012572029622114882,True,False,True
+0.9921848708941637,153.7021307223387,0.31530517778755995,True,False,True
+0.8042354126839072,104.3005074178697,0.45995744936705973,True,False,True
+1.2281842721120189,77.5027841431159,0.12186818721034563,True,False,True
+1.579516898710591,24.664157935799324,0.050444395768357395,True,False,True
+1.9606708138305364,82.22378337332518,0.3549275922589971,True,False,True
+1.7998782206971644,160.53216152898344,0.4132037123194599,True,False,True
+1.6524028339046097,102.27374452951491,0.2040445222664465,True,False,True
+1.6095461345036988,80.36277266090237,0.45191965975955706,True,False,True
+1.7702240638717257,106.41666947425449,0.23523374091582336,True,False,True
+1.7113124914409696,96.34807444289498,0.3915832941436192,True,False,True
+1.3908399892288978,109.13577994352258,0.10061875379114885,True,False,True
+0.9052534630128677,34.820176380150535,0.0405006685449186,True,False,True
+1.1714016740808624,26.017346724969276,0.0062418403085732965,True,False,True
+1.8431612184860304,2.191173641954891,0.019560248394512793,True,False,True
+1.7185541057819134,145.57192793055896,0.9001104741960259,False,True,False
+1.854449553366957,0.5668761483746565,0.035301499931406674,True,False,True
+0.7086861755292181,44.82406273133355,0.19408112878245057,True,False,True
+1.9315648240700365,102.4342530908865,0.27262835850760164,True,False,True
+1.4514868897312012,87.46506414025612,0.2611576167909807,True,False,True
+1.9495146288119514,157.75801242756125,0.8834532956567929,False,True,True
+1.6817129482654611,37.31085231288089,0.011562672228459627,True,False,True
+1.6359695009768258,19.948725976743745,0.02179136280764666,True,False,True
+1.8705160055892271,28.072771645850345,0.015718280241646516,True,False,True
+1.7103692293599282,87.12187784242198,0.46765192993500254,True,False,True
+1.7540396000584273,50.96595857605124,0.14366173187904005,True,False,True
+1.0803141473661666,79.69437783897914,0.30584761676349037,True,False,True
+1.6910319171020332,120.37686684748911,0.28515296727111705,True,False,True
+1.4181307708000508,56.2413779054571,0.09828580108165225,True,False,True
+0.8456301228909056,116.39948625379698,0.4581492371796781,True,False,True
+1.0213822589101862,3.438071253814484,0.019638924424343368,True,False,True
+1.5657286626330633,95.58063912380142,0.3173056689580719,True,False,True
+1.2805868827605027,158.78191877470243,0.19238732641226575,True,False,True
+1.8294121522199949,163.47766836516502,0.8816949810603452,False,True,False
+0.9930139297432826,100.06310819905214,0.49376261507129,True,False,True
+```
+
+### `results/numbers.tex`
+
+```latex
+% generated by main.py — do not edit
+\newcommand{\RNChecks}{21}
+\newcommand{\RLmiTime}{0.7}
+\newcommand{\RAlphaPosMin}{0.53}
+\newcommand{\RAlphaPosMax}{0.78}
+\newcommand{\RAlphaRollPitch}{9.1}
+\newcommand{\RAlphaYaw}{2.1}
+\newcommand{\RTauBudgetXY}{0.234}
+\newcommand{\RTauBudgetZ}{0.0288}
+\newcommand{\RAccelBudgetXY}{3.0}
+\newcommand{\RAccelBudgetZ}{2.31}
+\newcommand{\RLevelBound}{0.092}
+\newcommand{\RGainKvX}{1.13}
+\newcommand{\RGainKvZ}{1.06}
+\newcommand{\RSettleTime}{8.7}
+\newcommand{\RFinalErr}{2\times10^{-9}}
+\newcommand{\RCertRollDeg}{37}
+\newcommand{\RPdRms}{1.3}
+\newcommand{\RFMin}{1.72}
+\newcommand{\RFMax}{2.65}
+\newcommand{\RPaperFMin}{$-$36}
+\newcommand{\RPaperFMax}{46}
+\newcommand{\RPaperSettle}{3.3}
+\newcommand{\RMcN}{500}
+\newcommand{\RMcTime}{105}
+\newcommand{\RMcConverged}{95.6}
+\newcommand{\RMcFeasible}{97.8}
+\newcommand{\RMcGround}{4.4}
+\newcommand{\RMcInside}{138}
+\newcommand{\RMcInsideConv}{100}
+\newcommand{\RMcSmallFeasible}{100}
+\newcommand{\RRuntime}{111}
+```
+
+### `results/summary.json`
+
+```json
+{
+  "symbolic_checks": {
+    "passed": 21,
+    "total": 21
+  },
+  "lmi": {
+    "solve_time_s": 0.6934282779693604,
+    "gains": {
+      "kx": 0.45265588085333397,
+      "ky": 0.7517456215653308,
+      "kz": 0.43244853904579333,
+      "kv": [
+        1.132835582734081,
+        1.5563876317010883,
+        1.0641397212205823
+      ],
+      "G": [
+        0.046128526848874474,
+        0.046128526848874474,
+        0.8777258742526066
+      ],
+      "kw": [
+        0.06399482131924981,
+        0.06399482131924981,
+        0.024874169018146767
+      ]
+    },
+    "alpha_position": {
+      "x": 0.5662500000000001,
+      "y": 0.7781250000000001,
+      "z": 0.531875
+    },
+    "alpha_attitude": [
+      9.14,
+      9.14,
+      2.0725000000000002
+    ],
+    "torque_budget_Nm": [
+      0.23399999999999999,
+      0.23399999999999999,
+      0.028800000000000006
+    ],
+    "accel_budget_xy": 3.0,
+    "accel_budget_z": 2.3100000000000005,
+    "attitude_level_bound": 0.09225705369774895,
+    "certified_roll_deg": 36.84334846629313
+  },
+  "mission": {
+    "lmi_full": {
+      "settling_time_5cm_s": 8.72,
+      "final_error_m": 2.202626020949773e-09,
+      "steady_rms_error_m": 1.3284051423277646e-07,
+      "motor_force_min_N": 1.7183112637465672,
+      "motor_force_max_N": 2.645144041871075,
+      "within_motor_limits": true,
+      "max_V2_increase": 5.933056993593227e-14
+    },
+    "lmi_pd": {
+      "settling_time_5cm_s": 8.662,
+      "final_error_m": 0.001664447853377759,
+      "steady_rms_error_m": 0.0012577376538188516,
+      "motor_force_min_N": 1.718190621586002,
+      "motor_force_max_N": 2.6448897488506993,
+      "within_motor_limits": true,
+      "max_V2_increase": 1.5771631906357105e-11
+    },
+    "paper_full": {
+      "settling_time_5cm_s": 3.2600000000000002,
+      "final_error_m": 6.899730177035242e-14,
+      "steady_rms_error_m": 3.116396147453779e-08,
+      "motor_force_min_N": -36.44969879593722,
+      "motor_force_max_N": 45.765779479099834,
+      "within_motor_limits": false,
+      "max_V2_increase": 2.930988785011723e-14
+    }
+  },
+  "monte_carlo": {
+    "n": 500,
+    "time_s": 104.84709095954895,
+    "converged": 0.956,
+    "feasible": 0.978,
+    "hit_ground": 0.044,
+    "n_inside_certified_set": 138,
+    "converged_inside_certified_set": 1.0,
+    "failures_inside_all_ground": true,
+    "feasible_small_perturbation": 1.0
+  },
+  "unicycle": {
+    "final_cross_track_m": 2.940926925321108e-06,
+    "V_monotone": true
+  },
+  "runtime_s": 110.94870829582214
+}
 ```
 
 ### `src/control/__init__.py`
@@ -1964,334 +1256,161 @@ dev = [
 """
 src/control/cascade_controller.py
 
-Cascade geometric controller for a quadrotor — Lee et al. (2010).
+Geometric cascade controller for a quadrotor — Lee, Leok, McClamroch (2010),
+with the weighted attitude error of Lee (2012) so that every axis can have
+its own gain.
 
-Notation follows the paper:
-  e_p   : position error  (world frame)
-  e_ψ   : yaw error
-  e_R   : attitude error  (SO3, body frame)
-  e_Ω   : angular velocity error (body frame)
-  R     : rotation matrix body → world
-  Ω     : angular velocity in body frame
+  e_p, e_v : position / velocity error           (world frame)
+  R_e      : R_dᵀR,  attitude error rotation
+  e_R      : ½ vee(G R_e − R_eᵀG),  G = diag(g) ≻ 0   (body frame)
+  Ψ        : ½ tr(G (I − R_e))
+  e_Ω      : Ω − R_eᵀΩ_d                           (body frame)
+
+  a_des = K_v(ṗ_d − K e_p − ṗ) + p̈_d            PD on position + feedforward
+  F_des = m(a_des + g e₃),  T = ‖F_des‖,  b₃d = F_des / T
+  R_d   = [b₂d × b₃d, b₂d, b₃d],  b₂d ∥ b₃d × [cos ψ_d, sin ψ_d, 0]
+  τ     = −e_R − K_Ω e_Ω  [+ Ω×JΩ − J(Ω̂ R_eᵀΩ_d − R_eᵀΩ̇_d)   if feedforward]
+
+Only with the bracketed terms is the attitude error system autonomous, which
+the stability analysis (src/symbolic/quadcopter_certified_lyapunov.py)
+requires.  Ω_d and Ω̇_d come from backward differences of R_d at the control
+rate (exact on the steady circle, O(dt) in transients).
+
+Mass, inertia, allocation and motor limits are read from the MuJoCo model.
 """
 
 from __future__ import annotations
 
-import numpy as np
 from dataclasses import dataclass, field
-from typing import Tuple
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Geometry helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _quat_to_rot(q: np.ndarray) -> np.ndarray:
-    """MuJoCo quaternion [qw, qx, qy, qz] → rotation matrix R (body → world)."""
-    qw, qx, qy, qz = q
-    return np.array([
-        [1 - 2*(qy**2 + qz**2),   2*(qx*qy - qw*qz),   2*(qx*qz + qw*qy)],
-        [  2*(qx*qy + qw*qz), 1 - 2*(qx**2 + qz**2),   2*(qy*qz - qw*qx)],
-        [  2*(qx*qz - qw*qy),     2*(qy*qz + qw*qx), 1 - 2*(qx**2 + qy**2)],
-    ])
-
-
-def _quat_to_yaw(q: np.ndarray) -> float:
-    qw, qx, qy, qz = q
-    return float(np.arctan2(2*(qw*qz + qx*qy), 1 - 2*(qy**2 + qz**2)))
-
-
-def _vee(S: np.ndarray) -> np.ndarray:
-    """Vee map: skew-symmetric matrix → axial vector."""
-    return np.array([S[2, 1], S[0, 2], S[1, 0]])
-
-
-def _wrap(angle: float) -> float:
-    """Wrap angle to (−π, π]."""
-    return float((angle + np.pi) % (2 * np.pi) - np.pi)
-
-
-def _safe_normalize(v: np.ndarray, fallback: np.ndarray) -> np.ndarray:
-    n = np.linalg.norm(v)
-    return v / n if n > 1e-9 else fallback
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Data containers
-# ──────────────────────────────────────────────────────────────────────────────
-
-@dataclass
-class QuadState:
-    """Full vehicle state as read from MuJoCo."""
-    pos:    np.ndarray   # p  ∈ ℝ³   world frame
-    quat:   np.ndarray   # [qw, qx, qy, qz]
-    vel:    np.ndarray   # ṗ  ∈ ℝ³   world frame
-    angvel: np.ndarray   # Ω  ∈ ℝ³   body frame
-
-
-@dataclass
-class QuadReference:
-    """
-    Desired trajectory point at time t.
-
-    accel is the feedforward term ẍ_d(t).
-    Defaults to zero → pure feedback.
-    For a circular trajectory: accel = [−Rω²cos(ωt), −Rω²sin(ωt), 0].
-    """
-    pos:      np.ndarray                                               # p_d
-    vel:      np.ndarray                                               # ṗ_d
-    yaw:      float                                                    # ψ_d
-    yaw_rate: float                                                    # ψ̇_d
-    accel:    np.ndarray = field(default_factory=lambda: np.zeros(3)) # ẍ_d
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Cascade controller
-# ──────────────────────────────────────────────────────────────────────────────
-
-class CascadeController:
-    """
-    Hierarchical cascade controller.
-
-    Outer loop  : Lyapunov position  → desired velocity  v_cmd
-    Middle loop : velocity P-control → desired acceleration  a_des
-    Thrust      : a_des + g·e₃  → thrust vector F_des, magnitude T
-    Attitude    : geometric SO(3) tracking  → torques τ   (Lee eq. 15)
-    Allocation  : [T, τ]  → individual motor forces  f₁…f₄
-
-    Override hooks
-    --------------
-    _compute_a_des()  : replace the middle loop (e.g. lambdified symbolic law)
-    _compute_torque() : replace the torque law  (e.g. add gyroscopic term)
-    """
-
-    def __init__(self, config: dict):
-        self.m          = float(config["mass"])
-        self.g          = 9.81
-        d               = float(config["arm_d"])    # L / √2
-        km              = float(config["km"])
-        self.max_thrust = float(config.get("max_thrust_per_motor", 4.0))
-
-        ctrl = config.get("controller", {})
-        self.kx   = float(ctrl.get("kx",   1.0))
-        self.ky   = float(ctrl.get("ky",   1.0))
-        self.kz   = float(ctrl.get("kz",   1.0))
-        self.kpsi = float(ctrl.get("kpsi", 1.0))
-        self.kv   = float(ctrl.get("kv",   4.0))
-        self.kR   = float(ctrl.get("kR",   8.0))
-        self.kw   = float(ctrl.get("kw",   2.5))
-
-        # Allocation matrix A  s.t.  [T, τx, τy, τz]ᵀ = A · [f₁ f₂ f₃ f₄]ᵀ
-        # Derived symbolically in quadcopter_dynamic_control.py.
-        # Motor order: FR(1), FL(2), BR(3), BL(4)
-        self._A = np.array([
-            [ 1.0,  1.0,  1.0,  1.0],
-            [  -d,   +d,   -d,   +d],
-            [  -d,   -d,   +d,   +d],
-            [ -km,  +km,  +km,  -km],
-        ])
-        self._Ainv = np.linalg.inv(self._A)
-
-        self.saturate = bool(config.get("controller", {}).get("saturate", False))
-
-    @classmethod
-    def from_config(cls, cfg: dict) -> "CascadeController":
-        return cls(cfg)
-
-    # ── override points ───────────────────────────────────────────────────────
-
-    def _compute_a_des(
-        self,
-        v_cmd: np.ndarray,
-        state: QuadState,
-        ref:   QuadReference,
-    ) -> np.ndarray:
-        """
-        Middle loop: velocity tracking → desired acceleration (world frame).
-            a_des = kv · (v_cmd − ṗ) + ẍ_d
-        Override to use a lambdified symbolic law.
-        """
-        return self.kv * (v_cmd - state.vel) + ref.accel
-
-    def _compute_torque(
-        self,
-        e_R:   np.ndarray,
-        e_Ω:   np.ndarray,
-        state: QuadState,
-    ) -> Tuple[np.ndarray, dict]:
-        """
-        Inner loop: attitude tracking → control torques (body frame).
-            τ = −kR e_R − kΩ e_Ω             (Lee et al. eq. 15)
-
-        Returns (tau, extras) where extras is a dict of additional quantities
-        to merge into the SimLogger log.  Override both to add terms
-        (e.g. gyroscopic cancellation) and expose them in the DataFrame.
-        """
-        tau = -self.kR * e_R - self.kw * e_Ω
-        return tau, {}
-
-    # ── main entry point ──────────────────────────────────────────────────────
-
-    def compute(
-        self,
-        state: QuadState,
-        ref:   QuadReference,
-    ) -> Tuple[np.ndarray, dict]:
-        """
-        Compute motor forces from current state and reference.
-
-        Returns
-        -------
-        forces : np.ndarray (4,)  clipped to [0, max_thrust_per_motor]
-        log    : dict  all intermediate quantities for SimLogger
-        """
-
-        # ── Outer loop: Lyapunov position (GAS) ──────────────────────────
-        # V = ½‖e_p‖²  →  V̇ = −e_pᵀ K e_p < 0
-        e_p      = state.pos - ref.pos
-        e_ψ      = _wrap(_quat_to_yaw(state.quat) - ref.yaw)
-        v_cmd    = ref.vel    - np.array([self.kx*e_p[0], self.ky*e_p[1], self.kz*e_p[2]])
-        ψ_dot_cmd = ref.yaw_rate - self.kpsi * e_ψ
-
-        # ── Middle loop: velocity → desired acceleration ──────────────────
-        a_des = self._compute_a_des(v_cmd, state, ref)
-
-        # ── Thrust vector (world frame) ───────────────────────────────────
-        # F_des = m (a_des + g e₃)
-        F_des = self.m * (a_des + np.array([0.0, 0.0, self.g]))
-        T     = max(float(np.linalg.norm(F_des)), 0.1 * self.m * self.g)
-
-        # ── Desired attitude (Lee et al. geometric construction) ──────────
-        # z_b,d = F_des / T
-        # x_c   = [cos ψ_d, sin ψ_d, 0]ᵀ
-        # y_b,d = (z_b,d × x_c) / ‖z_b,d × x_c‖
-        # x_b,d = y_b,d × z_b,d
-        z_d = F_des / T
-        x_c = np.array([np.cos(ref.yaw), np.sin(ref.yaw), 0.0])
-        y_d = _safe_normalize(np.cross(z_d, x_c), np.array([0.0, 1.0, 0.0]))
-        R_d = np.column_stack([np.cross(y_d, z_d), y_d, z_d])
-
-        # ── Attitude error (Lee et al. eq. 10) ────────────────────────────
-        # e_R = ½ vee(R_dᵀ R − Rᵀ R_d)
-        R   = _quat_to_rot(state.quat)
-        R_e = R_d.T @ R
-        e_R = 0.5 * _vee(R_e - R_e.T)
-
-        Ω_d = np.array([0.0, 0.0, ψ_dot_cmd])
-        e_Ω = state.angvel - R.T @ R_d @ Ω_d
-
-        # ── Torque law (overridable) ──────────────────────────────────────
-        tau, torque_extras = self._compute_torque(e_R, e_Ω, state)
-
-        # ── Motor allocation ──────────────────────────────────────────────
-        forces = self._Ainv @ np.array([T, tau[0], tau[1], tau[2]])
-        if self.saturate:
-            forces = np.clip(forces, 0.0, self.max_thrust)
-
-        log = {
-            "ex": float(e_p[0]),   "ey": float(e_p[1]),   "ez": float(e_p[2]),
-            "epsi": float(e_ψ),
-            "vx_cmd": float(v_cmd[0]), "vy_cmd": float(v_cmd[1]), "vz_cmd": float(v_cmd[2]),
-            "ax_des": float(a_des[0]), "ay_des": float(a_des[1]), "az_des": float(a_des[2]),
-            "ax_ff":  float(ref.accel[0]), "ay_ff": float(ref.accel[1]), "az_ff": float(ref.accel[2]),
-            "T": T,
-            "eRx": float(e_R[0]),  "eRy": float(e_R[1]),  "eRz": float(e_R[2]),
-            "tau_x": float(tau[0]), "tau_y": float(tau[1]), "tau_z": float(tau[2]),
-            "f1": float(forces[0]), "f2": float(forces[1]),
-            "f3": float(forces[2]), "f4": float(forces[3]),
-            **torque_extras,   # certified controller adds gyro_x/y/z here
-        }
-
-        return forces, log
-```
-
-### `src/control/certified_cascade_controller.py`
-
-```python
-"""
-src/control/certified_cascade_controller.py
-
-Extends CascadeController with the gyroscopic cancellation term required
-for full Lyapunov certification (Lee et al. 2010, Theorem 1).
-
-The only change is in _compute_torque():
-
-    τ = −kR e_R − kΩ e_Ω  +  Ω × JΩ        (gyroscopic cancellation)
-
-Without this term the nonlinear Coriolis dynamics of J enter the error
-dynamics and V̇_att can no longer be proven strictly negative.
-
-Why this is sufficient for a constant-rate circular trajectory
---------------------------------------------------------------
-The full Lee et al. torque law (eq. 17) also includes:
-    J (Ω̂ Rᵀ R_d Ω_d − Rᵀ R_d Ω̇_d)
-For a circle with constant ω: Ω_d = [0, 0, ω]ᵀ and Ω̇_d = 0.
-This term vanishes. See quadcopter_certified_lyapunov.py for the proof.
-"""
-
-from __future__ import annotations
 
 import mujoco
 import numpy as np
 
-from src.control.cascade_controller import CascadeController, QuadState
+G_ACC = 9.81
+E3 = np.array([0.0, 0.0, 1.0])
 
 
-class CertifiedCascadeController(CascadeController):
+def vee(S: np.ndarray) -> np.ndarray:
+    """Skew-symmetric matrix → axial vector."""
+    return np.array([S[2, 1], S[0, 2], S[1, 0]])
+
+
+@dataclass
+class QuadReference:
+    pos:   np.ndarray                                           # p_d
+    vel:   np.ndarray                                           # ṗ_d
+    yaw:   float                                                # ψ_d
+    accel: np.ndarray = field(default_factory=lambda: np.zeros(3))  # p̈_d
+
+
+def circle_reference(t: float, radius: float, omega: float, z_d: float) -> QuadReference:
+    """p_d(t) = [R cos ωt, R sin ωt, z_d] with exact derivatives, yaw tangent to the circle."""
+    c, s = np.cos(omega * t), np.sin(omega * t)
+    return QuadReference(
+        pos   = np.array([radius * c, radius * s, z_d]),
+        vel   = np.array([-radius * omega * s, radius * omega * c, 0.0]),
+        yaw   = omega * t + np.pi / 2.0,
+        accel = np.array([-radius * omega**2 * c, -radius * omega**2 * s, 0.0]),
+    )
+
+
+def desired_attitude(F_des: np.ndarray, yaw: float) -> np.ndarray:
+    """R_d with third axis along F_des and first axis as close as possible to heading yaw."""
+    z_d = F_des / np.linalg.norm(F_des)
+    y_d = np.cross(z_d, [np.cos(yaw), np.sin(yaw), 0.0])
+    y_d /= np.linalg.norm(y_d)
+    return np.column_stack([np.cross(y_d, z_d), y_d, z_d])
+
+
+def vehicle_parameters(model: mujoco.MjModel, body: str = "quad") -> dict:
+    """Mass, principal inertia, allocation matrix A ([T, τ] = A f) and motor range, from the MJCF."""
+    b = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body)
+    if not np.allclose(model.body_iquat[b], [1.0, 0.0, 0.0, 0.0]):
+        raise ValueError("Principal inertia axes must coincide with the body frame.")
+    data = mujoco.MjData(model)                      # qpos0: level pose, so body = world axes
+    mujoco.mj_forward(model, data)
+    moment = np.zeros((model.nu, model.nv))
+    mujoco.mju_sparse2dense(moment, data.actuator_moment, data.moment_rownnz,
+                            data.moment_rowadr, data.moment_colind)
+    return {
+        "mass": float(model.body_subtreemass[b]),
+        "J": model.body_inertia[b].copy(),
+        "A": moment[:, 2:6].T,                       # free-joint dofs: [Fz, τx, τy, τz]
+        "f_range": model.actuator_ctrlrange.copy(),
+    }
+
+
+class GeometricController:
     """
-    Drop-in replacement for CascadeController.
-    Reads the inertia tensor J directly from the MuJoCo model so that
-    the gyroscopic cancellation exactly matches the simulated physics.
+    gains: kx, ky, kz, kv (scalar or per axis), G or kR (scalar ⇒ G = kR·I),
+           kw (scalar or per axis), saturate.
+    feedforward=False gives the PD-only law (no Ω×JΩ, no desired-frame terms).
     """
 
-    def __init__(self, config: dict, J: np.ndarray):
-        super().__init__(config)
-        self.J       = J
-        self.full_ff = bool(config.get("controller", {}).get("full_ff", False))
-        self.saturate = bool(config.get("controller", {}).get("saturate", False))
+    def __init__(self, model: mujoco.MjModel, gains: dict, feedforward: bool = True):
+        p = vehicle_parameters(model)
+        self.m, self.J, self.f_range = p["mass"], p["J"], p["f_range"]
+        self.A_inv = np.linalg.inv(p["A"])
+        self.dt = model.opt.timestep
+        self.feedforward = feedforward
 
-    @classmethod
-    def from_model(
-        cls, config: dict, model: mujoco.MjModel
-    ) -> "CertifiedCascadeController":
-        """Extract J from the MuJoCo model and build the controller."""
-        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "quad")
-        J = np.diag(model.body_inertia[body_id])
-        return cls(config, J)
+        per_axis = lambda v: np.broadcast_to(np.asarray(v, float), (3,)).copy()
+        self.K  = np.array([gains["kx"], gains["ky"], gains["kz"]], float)
+        self.kv = per_axis(gains["kv"])
+        self.G  = per_axis(gains["G"] if "G" in gains else gains["kR"])
+        self.kw = per_axis(gains["kw"])
+        self.saturate = bool(gains.get("saturate", False))
+        self._R_d_prev = self._W_d_prev = None
 
-    # ── single override: certified torque law ────────────────────────────────
+    def _desired_rates(self, R_d):
+        """Ω_d = log(R_d,prevᵀ R_d)/dt,  Ω̇_d = (Ω_d − Ω_d,prev)/dt  (zero until history exists)."""
+        W_d, dW_d = np.zeros(3), np.zeros(3)
+        if self._R_d_prev is not None:
+            q = np.zeros(4)
+            mujoco.mju_mat2Quat(q, (self._R_d_prev.T @ R_d).ravel())
+            mujoco.mju_quat2Vel(W_d, q, self.dt)
+            if self._W_d_prev is not None:
+                dW_d = (W_d - self._W_d_prev) / self.dt
+            self._W_d_prev = W_d
+        self._R_d_prev = R_d
+        return W_d, dW_d
 
-    def _compute_torque(
-        self,
-        e_R:   np.ndarray,
-        e_Ω:   np.ndarray,
-        state: QuadState,
-    ) -> tuple:
-        """
-        Certified torque (Lee et al. eq. 17, constant-ω simplification):
-            τ = −kR e_R − kΩ e_Ω + Ω × JΩ
+    def compute(self, data: mujoco.MjData, ref: QuadReference) -> tuple[np.ndarray, dict]:
+        """Motor forces for the current MuJoCo state.  Call exactly once per period dt."""
+        pos, vel, W = data.qpos[:3], data.qvel[:3], data.qvel[3:6]   # Ω in body frame
+        R = np.zeros(9)
+        mujoco.mju_quat2Mat(R, data.qpos[3:7])                          # current state (xmat lags one step)
+        R = R.reshape(3, 3)
 
-        V̇_att = −kR ‖e_R‖² − kΩ ‖e_Ω‖² < 0   (restored by gyroscopic term)
+        e_p, e_v = pos - ref.pos, vel - ref.vel
+        a_des = -self.kv * self.K * e_p - self.kv * e_v + ref.accel
+        F_des = self.m * (a_des + G_ACC * E3)
+        T = float(np.linalg.norm(F_des))
+        R_d = desired_attitude(F_des, ref.yaw)
+        W_d, dW_d = self._desired_rates(R_d)
 
-        Returns (tau, extras) — extras exposes gyro_x/y/z in the SimLogger.
-        """
-        gyro = np.cross(state.angvel, self.J @ state.angvel)
-        tau  = -self.kR * e_R - self.kw * e_Ω + gyro
+        R_e = R_d.T @ R
+        Gm  = np.diag(self.G)
+        e_R = 0.5 * vee(Gm @ R_e - R_e.T @ Gm)
+        e_W = W - R_e.T @ W_d
+        tau = -e_R - self.kw * e_W
+        if self.feedforward:
+            tau += np.cross(W, self.J * W) - self.J * (np.cross(W, R_e.T @ W_d) - R_e.T @ dW_d)
 
-        if self.full_ff:
-            Om_hat = np.array([
-                [                0, -state.angvel[2],  state.angvel[1]],
-                [ state.angvel[2],                 0, -state.angvel[0]],
-                [-state.angvel[1],  state.angvel[0],                0],
-            ])
-            tau += self.J @ (Om_hat @ np.array([0.0, 0.0, self.kpsi]))
+        forces = self.A_inv @ np.r_[T, tau]
+        if self.saturate:
+            forces = np.clip(forces, self.f_range[:, 0], self.f_range[:, 1])
 
-        extras = {
-            "gyro_x": float(gyro[0]),
-            "gyro_y": float(gyro[1]),
-            "gyro_z": float(gyro[2]),
+        Psi = 0.5 * float(np.trace(Gm @ (np.eye(3) - R_e)))
+        log = {
+            "ex": e_p[0], "ey": e_p[1], "ez": e_p[2],
+            "T": T, "Psi": Psi,
+            "V2": Psi + 0.5 * float(e_W @ (self.J * e_W)),
+            "Wdx": W_d[0], "Wdy": W_d[1], "Wdz": W_d[2],
+            "tau_x": tau[0], "tau_y": tau[1], "tau_z": tau[2],
+            "f1": forces[0], "f2": forces[1], "f3": forces[2], "f4": forces[3],
         }
-        return tau, extras
+        return forces, log
 ```
 
 ### `src/control/path_following_controller.py`
@@ -2300,51 +1419,34 @@ class CertifiedCascadeController(CascadeController):
 """
 src/control/path_following_controller.py
 
-Path-following controller for the quadrotor.
+Path-following reference generator for the quadrotor.
 
-Architecture
-------------
-                        γ dynamics
-   ┌─────────────────────────────────────────────┐
-   │   γ̇ = v_d + k_γ t̂(γ)^T e_p              │
-   │   e_p = p − p_d(γ)                          │
-   └──────────────────┬──────────────────────────┘
-                      │  p_d(γ), ∂p_d/∂γ · γ̇, ψ_d(γ), ψ̇_d
-                      ▼
-           ┌─────────────────────┐
-           │  QuadReference      │   v_cmd = ∂p_d/∂γ · γ̇ − K e_p
-           │  (to CascadeCtrl)   │   (cascade controller handles inner loop)
-           └─────────────────────┘
+A virtual target moves along the path p_d(γ) with
+    γ̇ = v_d + k_γ e_s,    e_s = t̂(γ)ᵀ (p − p_d(γ))   (along-track error).
+It produces a QuadReference (p_d, ṗ_d, p̈_d, ψ_d) that the cascade
+controller tracks like any other reference.  ṗ_d and p̈_d are the exact
+derivatives of p_d(γ(t)) along the closed loop, so the stability result
+of the trajectory-tracking case carries over unchanged
+(see src/symbolic/quadcopter_path_following.py).
 
-Why smoother transients
------------------------
-Trajectory tracking  :  p_d(t) moves at fixed speed ω regardless of
-                         vehicle position → vehicle must "chase" the
-                         reference when starting far away.
-
-Path following       :  γ̇ = v_d + k_γ t̂^T e_p.  When the vehicle is
-                         laterally far from the path (e_p mostly normal),
-                         t̂^T e_p ≈ 0 and γ̇ ≈ v_d, but the position
-                         controller pulls the vehicle to p_d(γ) without
-                         the reference running away.  When the vehicle is
-                         behind the virtual target (negative along-track
-                         error), γ̇ decreases, giving the vehicle time to
-                         catch up before progressing along the path.
+The γ-law does not change how fast e_p converges: it only decides where
+the reference is.  When the vehicle lags (e_s < 0) the target slows down,
+when it leads (e_s > 0) the target speeds up.
 
 Usage
 -----
 path = CirclePath(R=3.0, z_d=3.0)
 pfc  = PathFollowingController.from_config(cfg, path)
-
+pfc.reset(initial_pos)
 # in _loop_step:
-ref, gamma, gamma_dot = pfc.step(state, dt)
-forces, log = cascade_ctrl.compute(state, ref)
+ref, gamma, gamma_dot = pfc.step(data.qpos[:3], data.qvel[:3], dt)
+forces, log = controller.compute(data, ref)
 """
 
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass
+
 from src.control.cascade_controller import QuadReference
 
 
@@ -2354,12 +1456,8 @@ from src.control.cascade_controller import QuadReference
 
 class CirclePath:
     """
-    Planar circle at constant altitude.
-
-        p_d(γ) = [R cos γ,  R sin γ,  z_d]
-
-    The parameter γ is the angle in radians.
-    One full lap corresponds to Δγ = 2π.
+    Planar circle at constant altitude, p_d(γ) = [R cos γ, R sin γ, z_d],
+    γ in radians (one lap = 2π).
     """
 
     def __init__(self, R: float, z_d: float):
@@ -2367,64 +1465,45 @@ class CirclePath:
         self.z_d = z_d
 
     def position(self, gamma: float) -> np.ndarray:
-        """Virtual target position p_d(γ)."""
-        return np.array([self.R * np.cos(gamma),
-                         self.R * np.sin(gamma),
-                         self.z_d])
+        return np.array([self.R * np.cos(gamma), self.R * np.sin(gamma), self.z_d])
 
     def tangent(self, gamma: float) -> np.ndarray:
-        """Unnormalised tangent  ∂p_d/∂γ = [−R sinγ, R cosγ, 0]."""
-        return np.array([-self.R * np.sin(gamma),
-                          self.R * np.cos(gamma),
-                          0.0])
+        """∂p_d/∂γ."""
+        return np.array([-self.R * np.sin(gamma), self.R * np.cos(gamma), 0.0])
+
+    def curvature_term(self, gamma: float) -> np.ndarray:
+        """∂²p_d/∂γ²."""
+        return np.array([-self.R * np.cos(gamma), -self.R * np.sin(gamma), 0.0])
 
     def unit_tangent(self, gamma: float) -> np.ndarray:
-        """Unit tangent  t̂(γ) = [−sinγ, cosγ, 0]."""
         return np.array([-np.sin(gamma), np.cos(gamma), 0.0])
 
     def yaw(self, gamma: float) -> float:
-        """
-        Desired yaw: vehicle should face along the path tangent.
-        For a circle:  ψ_d = γ + π/2.
-        """
+        """Heading tangent to the path: ψ_d = γ + π/2."""
         return float(gamma + np.pi / 2.0)
 
-    def yaw_rate(self, gamma_dot: float) -> float:
-        """
-        ψ̇_d = dψ_d/dt = (dψ_d/dγ) γ̇ = 1 · γ̇   (for circle).
-        """
-        return float(gamma_dot)
-
     def closest_gamma(self, p: np.ndarray) -> float:
-        """
-        Initial γ that minimises ‖p_d(γ) − p‖² in the xy plane.
-        For a circle this is the angle of the vehicle projected onto the circle.
-        """
+        """γ of the point of the circle closest to p (in the xy plane)."""
         return float(np.arctan2(p[1], p[0]))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Path-following outer loop
+# Path-following reference generator
 # ──────────────────────────────────────────────────────────────────────────────
 
 class PathFollowingController:
     """
-    Outer-loop path-following controller.
-
-    Maintains the virtual path parameter γ and produces a QuadReference
-    for the CascadeController's inner loop.
-
     Parameters (from config["path_following"])
     ------------------------------------------
-    v_d     : desired path speed [rad/s]
-    k_gamma : along-track correction gain [-]
+    v_d     : nominal path rate [rad/s]
+    k_gamma : along-track correction gain [rad/(s·m)]
     """
 
     def __init__(self, path: CirclePath, v_d: float, k_gamma: float):
         self.path    = path
         self.v_d     = v_d
         self.k_gamma = k_gamma
-        self._gamma  = 0.0          # virtual path parameter (initialised in reset)
+        self._gamma  = 0.0
 
     @classmethod
     def from_config(cls, cfg: dict, path: CirclePath) -> "PathFollowingController":
@@ -2436,11 +1515,7 @@ class PathFollowingController:
         )
 
     def reset(self, initial_pos: np.ndarray) -> None:
-        """
-        Initialise γ to the closest point on the path to initial_pos.
-        This avoids a large initial along-track error that would otherwise
-        cause the virtual target to immediately "run away" from the vehicle.
-        """
+        """Start the virtual target at the point of the path closest to the vehicle."""
         self._gamma = self.path.closest_gamma(initial_pos)
 
     @property
@@ -2449,584 +1524,540 @@ class PathFollowingController:
 
     def step(
         self,
-        pos:    np.ndarray,
-        dt:     float,
+        pos: np.ndarray,
+        vel: np.ndarray,
+        dt:  float,
     ) -> tuple[QuadReference, float, float]:
         """
-        Advance γ by one timestep and return the QuadReference.
+        Return the reference at the current γ, then advance γ by one Euler step.
 
-        Parameters
-        ----------
-        pos : current vehicle position (world frame)
-        dt  : timestep [s]
-
-        Returns
-        -------
-        ref        : QuadReference for the cascade controller
-        gamma      : current path parameter
-        gamma_dot  : current path parameter rate
+        p̈_d = (∂²p_d/∂γ²) γ̇² + (∂p_d/∂γ) γ̈,   γ̈ = k_γ ė_s,
+        ė_s = (∂t̂/∂γ γ̇)ᵀ e_p + t̂ᵀ (ṗ − (∂p_d/∂γ) γ̇).
         """
         gamma = self._gamma
+        p_d   = self.path.position(gamma)
+        dp_d  = self.path.tangent(gamma)
+        ddp_d = self.path.curvature_term(gamma)
+        t_hat = self.path.unit_tangent(gamma)
+        dt_hat = ddp_d / self.path.R                       # ∂t̂/∂γ for the circle
 
-        # ── path quantities at current γ ──────────────────────────────────
-        p_d     = self.path.position(gamma)
-        dp_d    = self.path.tangent(gamma)          # ∂p_d/∂γ (unnormalised)
-        t_hat   = self.path.unit_tangent(gamma)     # normalised tangent
-
-        # ── position error and along-track component ──────────────────────
         e_p = pos - p_d
-        e_s = float(t_hat @ e_p)                    # along-track error
-
-        # ── gamma dynamics:  γ̇ = v_d + k_γ e_s ──────────────────────────
-        # When e_s > 0 (vehicle ahead of target): advance γ faster.
-        # When e_s < 0 (vehicle behind target):   slow γ down.
+        e_s = float(t_hat @ e_p)
         gamma_dot = self.v_d + self.k_gamma * e_s
 
-        # ── integrate γ (Euler step; same integrator as MuJoCo) ──────────
-        self._gamma = gamma + gamma_dot * dt
+        e_s_dot    = float(dt_hat @ e_p) * gamma_dot + float(t_hat @ (vel - dp_d * gamma_dot))
+        gamma_ddot = self.k_gamma * e_s_dot
 
-        # ── build reference for the cascade controller ────────────────────
-        # ref.vel = ∂p_d/∂γ · γ̇  is the feedforward velocity.
-        # The cascade controller computes:
-        #   v_cmd = ref.vel − K_p (pos − ref.pos)
-        #         = dp_d · γ̇  −  K_p e_p
-        # which is exactly the path-following velocity law.
         ref = QuadReference(
-            pos      = p_d,
-            vel      = dp_d * gamma_dot,
-            yaw      = self.path.yaw(gamma),
-            yaw_rate = self.path.yaw_rate(gamma_dot),
+            pos   = p_d,
+            vel   = dp_d * gamma_dot,
+            yaw   = self.path.yaw(gamma),
+            accel = ddp_d * gamma_dot**2 + dp_d * gamma_ddot,
         )
 
+        self._gamma = gamma + gamma_dot * dt
         return ref, gamma, gamma_dot
 ```
 
-### `src/logging/__init__.py`
+### `src/design/__init__.py`
 
 ```python
 
 ```
 
-### `src/logging/sim_logger.py`
+### `src/design/lmi_gains.py`
 
 ```python
-# src/logging/sim_logger.py
-import json, pandas as pd
-from pathlib import Path
+"""
+src/design/lmi_gains.py
 
-class SimLogger:
-    def __init__(self):
-        self._current: dict      = {}
-        self._records: list[dict] = []
+Actuator-aware gain synthesis with LMIs (state feedback, input-bounded).
 
-    def log(self, data: dict):
-        """Accumulate fields during a single step."""
-        self._current.update(data)
+Port of fsf_input_bounded.m from the tank-LMI project (same notation):
+for ẋ = A x + B u, u = K x, find W = Wᵀ ≻ 0, X with K = X W⁻¹ such that
 
-    def commit(self, t: float):
-        """Seal the current step record. Called once per physics step by the wrapper."""
-        self._current["t"] = t
-        self._records.append(dict(self._current))
-        self._current = {}
+    He(A W + B X) ⪯ −2α W                     (E = {xᵀW⁻¹x ≤ 1} invariant, rate α)
+    [ 1   x0ᵀ ; x0  W ] ⪰ 0   for every x0    (design envelope inside E)
+    [ ū_i²  X_i ; X_iᵀ  W ] ⪰ 0   for each i  (|K_i x| ≤ ū_i on all of E)
 
-    def to_dataframe(self) -> pd.DataFrame:
-        return pd.json_normalize(self._records)
+and maximise α by bisection (α enters bilinearly through α W).
+Every trajectory of the linear model that starts in E stays in E, decays at
+rate α and never asks for more than ū.  No saturation is used.
 
-    def save(self, path: str):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self._records, f, indent=2)
+Applied to the two reduced models of the cascade, axis by axis:
 
-    @staticmethod
-    def load(path: str) -> pd.DataFrame:
-        with open(path) as f:
-            return pd.json_normalize(json.load(f))
-```
+  position   ė_p = e_v, ė_v = u          u = a_des − p̈_d (exact when R = R_d)
+  attitude   θ̇ = e_Ω,   J_j ė_Ω = u      u = PD part of the torque (linearised
+                                            error dynamics after the exact
+                                            gyroscopic / feedforward cancellation)
 
-### `src/multithreading/__init__.py`
+The input budgets come from the motor limits 0 ≤ f_i ≤ f_max, split between
+collective thrust and torques (see motor_budgets()).
+"""
 
-```python
-from .monte_carlo_roa import MonteCarloROASettings, run_parallel_roa_rollouts
-```
-
-### `src/multithreading/monte_carlo_roa.py`
-
-```python
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cvxpy as cp
 import numpy as np
-from joblib import Parallel, delayed
-from tqdm.auto import tqdm
+
+DOUBLE_INTEGRATOR_A = np.array([[0.0, 1.0], [0.0, 0.0]])
 
 
-@dataclass(frozen=True)
-class MonteCarloROASettings:
-    n_samples: int = 10_000
-    max_radius: float = 3.0
-    n_jobs: int = -1
-    t_max: float = 4.0
-    initial_altitude_error: float = 0.0
-    ground_clearance: float = 0.1
-    success_threshold: float = 0.05
-    seed: int | None = None
-    show_progress: bool = True
-
-    @classmethod
-    def from_config(cls, config: dict) -> "MonteCarloROASettings":
-        multithreading = config.get("multithreading", {})
-        return cls(
-            n_samples=int(multithreading.get("n_samples", cls.n_samples)),
-            max_radius=float(multithreading.get("max_radius", cls.max_radius)),
-            n_jobs=int(multithreading.get("n_jobs", cls.n_jobs)),
-            t_max=float(multithreading.get("t_max", cls.t_max)),
-            initial_altitude_error=float(
-                multithreading.get("initial_altitude_error", cls.initial_altitude_error)
-            ),
-            ground_clearance=float(
-                multithreading.get("ground_clearance", cls.ground_clearance)
-            ),
-            success_threshold=float(
-                multithreading.get("success_threshold", cls.success_threshold)
-            ),
-            seed=multithreading.get("seed", cls.seed),
-            show_progress=bool(multithreading.get("show_progress", cls.show_progress)),
-        )
+@dataclass
+class LMIDesign:
+    K: np.ndarray        # u = K x
+    W: np.ndarray        # E = {x : xᵀ W⁻¹ x ≤ 1}
+    alpha: float         # certified decay rate of V = xᵀW⁻¹x  (‖x‖ decays at least as e^{−α t})
+    ubar: float
 
 
-def _sample_initial_positions(settings: MonteCarloROASettings) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(settings.seed)
-    radii = np.sqrt(rng.uniform(0.0, settings.max_radius**2, settings.n_samples))
-    angles = rng.uniform(0.0, 2.0 * np.pi, settings.n_samples)
-    return radii * np.cos(angles), radii * np.sin(angles)
+def _solve_alpha(A, B, ubar, X0, alpha, eps=1e-6):
+    n, m = B.shape
+    W = cp.Variable((n, n), symmetric=True)
+    X = cp.Variable((m, n))
+    M = A @ W + B @ X
+    cons = [W >> eps * np.eye(n), M + M.T << -2 * alpha * W]
+    for x0 in X0:
+        x0 = np.asarray(x0, float).reshape(n, 1)
+        cons.append(cp.bmat([[np.ones((1, 1)), x0.T], [x0, W]]) >> 0)
+    for i in range(m):
+        cons.append(cp.bmat([[np.array([[ubar[i] ** 2]]), X[i:i + 1, :]], [X[i:i + 1, :].T, W]]) >> 0)
+    prob = cp.Problem(cp.Minimize(0), cons)
+    try:
+        prob.solve(solver=cp.CLARABEL)
+    except cp.SolverError:
+        return False, None, None
+    ok = prob.status == cp.OPTIMAL
+    return ok, (W.value if ok else None), (X.value if ok else None)
 
 
-def _run_single_rollout(simulator_cls, config_path: str, ex: float, ey: float, settings: MonteCarloROASettings):
-    simulator = simulator_cls(config_path)
-    success = simulator.run_rollout(
-        ex0=ex,
-        ey0=ey,
-        ez0=settings.initial_altitude_error,
-        T_max=settings.t_max,
-        ground_clearance=settings.ground_clearance,
-        success_threshold=settings.success_threshold,
-    )
-    return ex, ey, success
+def fsf_input_bounded(A, B, ubar, X0, alpha_max: float = 50.0, tol: float = 1e-3) -> LMIDesign:
+    """Largest certified rate α ≤ alpha_max with |u_i| ≤ ū_i on an invariant ellipsoid containing X0."""
+    A = np.asarray(A, float); B = np.asarray(B, float).reshape(A.shape[0], -1)
+    ubar = np.atleast_1d(np.asarray(ubar, float))
+    lo, hi = 0.0, 1e-2
+    while hi < alpha_max and _solve_alpha(A, B, ubar, X0, hi)[0]:
+        lo, hi = hi, min(2 * hi, alpha_max)
+    if hi >= alpha_max and _solve_alpha(A, B, ubar, X0, alpha_max)[0]:
+        lo = hi = alpha_max
+    while hi - lo > tol * max(hi, 1.0):
+        mid = 0.5 * (lo + hi)
+        if _solve_alpha(A, B, ubar, X0, mid)[0]:
+            lo = mid
+        else:
+            hi = mid
+    ok, W, X = _solve_alpha(A, B, ubar, X0, lo)
+    if not ok or lo <= 0:
+        raise RuntimeError("No positive-rate design satisfies the input budget on the requested envelope.")
+    return LMIDesign(K=X @ np.linalg.inv(W), W=W, alpha=lo, ubar=float(ubar[0]))
 
 
-def run_parallel_roa_rollouts(
-    simulator_cls,
-    config_path: str,
-    config: dict,
-    settings: MonteCarloROASettings | None = None,
-    progress_desc: str = "Running headless rollouts",
-) -> dict:
-    """Execute the empirical ROA sampling loop in parallel."""
-    settings = settings or MonteCarloROASettings.from_config(config)
-    ex_samples, ey_samples = _sample_initial_positions(settings)
-    params = list(zip(ex_samples, ey_samples))
+def _box_vertices(a: float, b: float) -> list[np.ndarray]:
+    return [np.array([sa * a, sb * b]) for sa in (-1, 1) for sb in (-1, 1)]
 
-    results = Parallel(n_jobs=settings.n_jobs)(
-        delayed(_run_single_rollout)(simulator_cls, config_path, ex, ey, settings)
-        for ex, ey in tqdm(
-            params,
-            total=len(params),
-            desc=progress_desc,
-            disable=not settings.show_progress,
-        )
-    )
 
-    ex_res, ey_res, success_res = zip(*results)
+# ──────────────────────────────────────────────────────────────────────────────
+# Budgets from the motor limits
+# ──────────────────────────────────────────────────────────────────────────────
+
+def motor_budgets(cfg: dict, vehicle: dict) -> dict:
+    """
+    f_i = T/4 + δ_i,  |δ_i| ≤ |τx|/(4d) + |τy|/(4d) + |τz|/(4k_m)  (from A⁻¹).
+    Reserving σ newtons per motor for torques and keeping T/4 ∈ [σ, f_max − σ]
+    guarantees 0 ≤ f_i ≤ f_max.  σ is split between the three torque axes.
+
+    Collective thrust with u = a_des − p̈_d and |u_x|,|u_y| ≤ ū_xy, |u_z| ≤ ū_z:
+        T/m ≥ g − ū_z,     T/m ≤ √((a_h + √2 ū_xy)² + (g + ū_z)²),
+    a_h = max horizontal ‖p̈_d‖ (= R ω² on the circle).
+    """
+    m, g, A = vehicle["mass"], 9.81, vehicle["A"]
+    arm = np.abs(A[1:, :]).max(axis=1)                      # [d, d, k_m] from the allocation matrix
+    f_max = float(vehicle["f_range"][:, 1].min())
+    des = cfg["design"]
+    sigma = des["torque_reserve_per_motor"]
+    tau_max = 4 * sigma * np.asarray(des["torque_split"], float) * arm
+
+    ubar_z = g - 4 * sigma / m                              # keeps T/4 ≥ σ
+    ubar_xy = des["accel_budget_xy"]
+    traj = cfg["trajectory"]
+    a_h = traj["radius"] * traj["omega"] ** 2
+    T_max = m * np.hypot(a_h + np.sqrt(2) * ubar_xy, g + ubar_z)
+    if ubar_z <= 0 or T_max / 4 > f_max - sigma:
+        raise ValueError("Thrust budget infeasible: lower accel_budget_xy or torque_reserve_per_motor.")
+    return {"sigma": sigma, "tau_max": tau_max, "ubar_xy": ubar_xy, "ubar_z": ubar_z,
+            "T_max_per_motor": T_max / 4, "f_max": f_max}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gain synthesis for the cascade
+# ──────────────────────────────────────────────────────────────────────────────
+
+def design_position(cfg: dict, b: dict, e_p0: np.ndarray, e_v0: np.ndarray) -> dict:
+    """Per axis: u = K x = −k_v k_i e_p − k_v e_v  ⇒  k_v = −K₂,  k_i = K₁/K₂."""
+    env = cfg["design"]
+    out = {}
+    for i, ax in enumerate("xyz"):
+        ubar = b["ubar_z"] if ax == "z" else b["ubar_xy"]
+        X0 = _box_vertices(max(abs(e_p0[i]), env["min_position_envelope"]),
+                           max(abs(e_v0[i]), env["min_velocity_envelope"]))
+        des = fsf_input_bounded(DOUBLE_INTEGRATOR_A, np.array([[0.0], [1.0]]), [ubar], X0,
+                                alpha_max=env["alpha_max_position"])
+        K1, K2 = des.K.ravel()
+        out[ax] = {"kv": -K2, "k": K1 / K2, "alpha": des.alpha, "ubar": ubar, "W": des.W}
+    return out
+
+
+def design_attitude(cfg: dict, b: dict, J: np.ndarray, theta0: np.ndarray) -> dict:
+    """
+    Per body axis j: u_j = −κ_j θ_j − k_Ω,j e_Ω,j.  The diagonal stiffness κ is
+    realised on SO(3) by the weighted error e_R = ½ vee(G R_e − R_eᵀG) with
+    g_j = Σκ − 2κ_j (linearisation e_R ≈ ½(tr G·I − G) θ = diag(κ) θ).
+    """
+    env = cfg["design"]
+    kappa, kW, alphas, Ws = np.zeros(3), np.zeros(3), np.zeros(3), []
+    # roll and pitch share one envelope (J_x = J_y, equal budgets) so that κ_x = κ_y,
+    # which together with κ_z < 2κ_x makes every g_j positive
+    th_env = np.abs(theta0).copy()
+    th_env[:2] = th_env[:2].max()
+    for j in range(3):
+        ubar = env["pd_torque_fraction"] * b["tau_max"][j]
+        X0 = _box_vertices(max(th_env[j], np.radians(env["min_attitude_envelope_deg"])),
+                           env["min_rate_envelope"])
+        des = fsf_input_bounded(DOUBLE_INTEGRATOR_A, np.array([[0.0], [1.0 / J[j]]]), [ubar], X0,
+                                alpha_max=env["alpha_max_attitude"])
+        kappa[j], kW[j] = -des.K[0, 0], -des.K[0, 1]
+        alphas[j] = des.alpha
+        Ws.append(des.W)
+    G = kappa.sum() - 2 * kappa
+    if np.any(G <= 0):
+        raise ValueError(f"Stiffness {kappa} not realisable by a positive G (need κ_j < Σκ/2).")
+    return {"kappa": kappa, "G": G, "kW": kW, "alpha": alphas, "W": Ws,
+            "tau_pd_max": env["pd_torque_fraction"] * b["tau_max"]}
+
+
+def design_cascade_gains(cfg: dict, model) -> dict:
+    """
+    Position gains from the mission start, then attitude gains from the initial
+    attitude error that those position gains produce.  Returns the controller
+    gains plus the certificates (rates, ellipsoids, budgets).
+    """
+    from scipy.spatial.transform import Rotation
+    from src.control.cascade_controller import G_ACC, E3, circle_reference, desired_attitude, vehicle_parameters
+
+    vehicle = vehicle_parameters(model)
+    b = motor_budgets(cfg, vehicle)
+    ic, traj = cfg["initial_state"], cfg["trajectory"]
+    ref0 = circle_reference(0.0, traj["radius"], traj["omega"], traj["z_height"])
+    e_p0, e_v0 = np.asarray(ic["pos"], float) - ref0.pos, -ref0.vel
+    pos = design_position(cfg, b, e_p0, e_v0)
+
+    kv = np.array([pos[a]["kv"] for a in "xyz"])
+    k = np.array([pos[a]["k"] for a in "xyz"])
+    R_d0 = desired_attitude(-kv * k * e_p0 - kv * e_v0 + ref0.accel + G_ACC * E3, ref0.yaw)
+    R0 = Rotation.from_euler("z", ic["yaw"]).as_matrix()
+    theta0 = Rotation.from_matrix(R_d0.T @ R0).as_rotvec()
+
+    att = design_attitude(cfg, b, vehicle["J"], theta0)
     return {
-        "ex": np.asarray(ex_res),
-        "ey": np.asarray(ey_res),
-        "success": np.asarray(success_res, dtype=bool),
-        "settings": settings,
+        "controller": {"kx": float(k[0]), "ky": float(k[1]), "kz": float(k[2]),
+                       "kv": kv.tolist(), "G": att["G"].tolist(), "kw": att["kW"].tolist()},
+        "position": pos, "attitude": att, "theta0": theta0, "budgets": b,
     }
 ```
 
-### `src/simulation/__init__.py`
+### `src/experiments.py`
 
 ```python
+"""
+src/experiments.py
 
-```
+Headless experiments behind every number and figure of the report.
 
-### `src/simulation/base_sim.py`
+load()                config/<name>.yaml with paths resolved
+simulate_quad()       closed-loop quadrotor in MuJoCo (circle or path following)
+roa_monte_carlo()     random initial positions/attitudes → convergence statistics
+render_quad()         replay a simulate_quad() run in MuJoCo's renderer → mp4
+simulate_unicycle()   kinematic unicycle with the Lyapunov path-following law
+"""
 
-```python
-# src/simulation/base_sim.py
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Union
-import mujoco
-import tempfile
-import os
-from tqdm import tqdm
-from src.logging.sim_logger import SimLogger
-from src.utils.config import load_config
 
-class BaseSim(ABC):
-    def __init__(self, config: Union[dict, str, Path]):
-        config, config_path = self._load_config_if_needed(config)
-
-        self.cfg = config
-        self.dt = config["dt"]
-        self.t_end = config["t_end"]
-        self.logger = SimLogger()
-
-        self._normalize_paths(config, config_path)
-        self._init_model(config["model_path"])    
-
-    def _load_config_if_needed(self, config: Union[dict, str, Path]):
-        """Load YAML when a path is provided, return (config_dict, config_path or None)."""
-        config_path = None
-        if isinstance(config, (str, Path)):
-            config_path = Path(config).expanduser().resolve()
-            config = load_config(str(config_path))
-        return config, config_path
-
-    def _normalize_paths(self, config: dict, config_path: Path | None):
-        """Make model/video paths absolute.
-
-        If a config file was provided, interpret relative paths relative to the
-        project root (assumed to be the parent of the config folder). This
-        prevents resolving relative model paths under the `config/` directory.
-        """
-        if config_path:
-            # config_path is e.g. /.../mcav_project/config/unicycle_fall_north.yaml
-            # project_root should be /.../mcav_project
-            project_root = config_path.parent.parent
-        else:
-            project_root = Path.cwd()
-
-        model_path = Path(config["model_path"])
-        if not model_path.is_absolute():
-            model_path = project_root / model_path
-        config["model_path"] = str(model_path)
-
-        if "video_path" in config:
-            video_path = Path(config["video_path"])
-            if not video_path.is_absolute():
-                config["video_path"] = str(project_root / video_path)
-
-    def _init_model(self, model_path: str):
-        """Initialize MuJoCo model and data from an XML/URDF path."""
-        model_path = str(model_path)
-
-        # If the model file is URDF and contains characters before the XML
-        # declaration (e.g. an editor comment), some XML parsers fail. Read
-        # the file and sanitize it into a temporary file that starts with an
-        # XML declaration. Keep the temp path to clean up at teardown.
-        suffix = os.path.splitext(model_path)[1].lower()
-        tmp_path = None
-        if suffix in (".urdf", ".xml"):
-            with open(model_path, "r", encoding="utf-8") as f:
-                txt = f.read()
-
-            # Find first XML declaration
-            idx = txt.find("<?xml")
-            if idx == -1:
-                # No declaration — if it starts with '<robot', add declaration
-                if txt.lstrip().startswith("<robot"):
-                    clean = "<?xml version=\"1.0\"?>\n" + txt
-                else:
-                    clean = txt
-            else:
-                # Strip any leading text before the XML declaration
-                clean = txt[idx:]
-
-            # Write sanitized content to a temporary file
-            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".xml", mode="w", encoding="utf-8")
-            tf.write(clean)
-            tf.flush()
-            tf.close()
-            tmp_path = tf.name
-            model_path_to_load = tmp_path
-        else:
-            model_path_to_load = model_path
-
-        try:
-            self.model = mujoco.MjModel.from_xml_path(model_path_to_load)
-        finally:
-            # store tmp path so we can remove it in teardown
-            self._tmp_model_path = tmp_path
-
-        self.model.opt.timestep = self.dt
-        self.data = mujoco.MjData(self.model)
-
-    # ── override this ──────────────────────────────────────────
-    def _loop_step(self, t: float, step: int):
-        """
-        Apply controls, read state, call self.logger.log(dict).
-        Do NOT call mj_step here — the wrapper does it.
-        """
-        pass
-    # ───────────────────────────────────────────────────────────
-
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-            t = i * self.dt
-            self._loop_step(t, i)
-            mujoco.mj_step(self.model, self.data)
-            self.logger.commit(t)
-        self._teardown()
-
-    def _teardown(self):
-        # Remove any temporary model file we created
-        tmp = getattr(self, "_tmp_model_path", None)
-        if tmp and os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-
-    def reset(self):
-        mujoco.mj_resetData(self.model, self.data)
-
-    def to_dataframe(self):
-        return self.logger.to_dataframe()
-
-    def save(self, path: str):
-        self.logger.save(path)
-```
-
-### `src/simulation/headless_sim.py`
-
-```python
-# src/simulation/headless_sim.py
-from .base_sim import BaseSim
-
-class HeadlessSim(BaseSim):
-    """Pure physics, no rendering. Fast — use for optimization and batch runs."""
-    pass   # BaseSim is already headless by default
-```
-
-### `src/simulation/video_sim.py`
-
-```python
-# src/simulation/video_sim.py
 import mujoco
 import numpy as np
-import imageio
-from tqdm import tqdm
-from typing import Union
-from pathlib import Path
-from .base_sim import BaseSim
+import pandas as pd
+import yaml
+from joblib import Parallel, delayed
+from scipy.integrate import solve_ivp
+from scipy.spatial.transform import Rotation
 
-class VideoSim(BaseSim):
-    """Offscreen rendering via mujoco.Renderer.
-    Video FPS and simulation FPS are always independent.
-    This constructor accepts either a config dict or a path to a YAML config.
-    If a path is provided we rely on BaseSim to load it and populate
-    `self.cfg` before using configuration values.
+from src.control.cascade_controller import GeometricController, circle_reference
+from src.control.path_following_controller import CirclePath, PathFollowingController
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load(name: str) -> dict:
+    cfg = yaml.safe_load((ROOT / "config" / f"{name}.yaml").read_text())
+    if "model_path" in cfg:
+        cfg["model_path"] = str(ROOT / cfg["model_path"])
+    return cfg
+
+
+def load_model(cfg: dict) -> mujoco.MjModel:
+    model = mujoco.MjModel.from_xml_path(cfg["model_path"])
+    model.opt.timestep = cfg["dt"]
+    return model
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Quadrotor
+# ──────────────────────────────────────────────────────────────────────────────
+
+def simulate_quad(
+    cfg: dict,
+    gains: dict | None = None,
+    feedforward: bool = True,
+    reference: str = "circle",              # "circle" | "path"
+    t_end: float | None = None,
+    pos0: np.ndarray | None = None,
+    R0: Rotation | None = None,
+    stop_on_ground: bool = False,
+) -> pd.DataFrame:
+
+    
+    """One closed-loop run; one row per control step."""
+    model = load_model(cfg)
+    data = mujoco.MjData(model)
+    ic = cfg["initial_state"]
+    data.qpos[:3] = ic["pos"] if pos0 is None else pos0
+    data.qpos[3:7] = (R0 or Rotation.from_euler("z", ic["yaw"])).as_quat(scalar_first=True)
+    ctrl = GeometricController(model, gains or cfg["controller"], feedforward)
+
+    traj = cfg["trajectory"]
+    pfc = None
+    if reference == "path":
+        pfc = PathFollowingController.from_config(cfg, CirclePath(traj["radius"], traj["z_height"]))
+        pfc.reset(data.qpos[:3])
+
+    rows = []
+    for i in range(int((t_end or cfg["t_end"]) / cfg["dt"])):
+        t = i * cfg["dt"]
+        if pfc is None:
+            ref = circle_reference(t, traj["radius"], traj["omega"], traj["z_height"])
+        else:
+            ref, _, _ = pfc.step(data.qpos[:3], data.qvel[:3], cfg["dt"])
+        data.ctrl[:], log = ctrl.compute(data, ref)
+        if not np.all(np.isfinite(data.ctrl)) or (stop_on_ground and data.qpos[2] < 0.05):
+            break
+        rows.append({"t": t, "x": data.qpos[0], "y": data.qpos[1], "z": data.qpos[2],
+                     **dict(zip(("qw", "qx", "qy", "qz"), data.qpos[3:7])),
+                     "e_norm": float(np.linalg.norm(data.qpos[:3] - ref.pos)), **log})
+        mujoco.mj_step(model, data)
+    return pd.DataFrame(rows)
+
+
+def _roa_rollout(cfg, gains, offset, rotvec, mc, f_max):
+    traj = cfg["trajectory"]
+    p0 = circle_reference(0.0, traj["radius"], traj["omega"], traj["z_height"]).pos
+    R0 = Rotation.from_rotvec(rotvec) * Rotation.from_euler("z", cfg["initial_state"]["yaw"])
+    df = simulate_quad(cfg, gains, True, "circle", mc["t_end"], p0 + offset, R0, stop_on_ground=True)
+    f = df[["f1", "f2", "f3", "f4"]].to_numpy()
+    finished = df["t"].iloc[-1] >= mc["t_end"] - 0.1
+    return {
+        "offset": float(np.linalg.norm(offset)),
+        "angle_deg": float(np.degrees(np.linalg.norm(rotvec))),
+        "V2_0": float(df["V2"].iloc[1]),                 # after Ω_d is initialised
+        "converged": bool(finished and df["e_norm"].iloc[-1] < mc["tol"] and df["Psi"].iloc[-1] < 1e-4),
+        "hit_ground": not finished,
+        "feasible": bool(f.min() >= 0.0 and f.max() <= f_max),
+    }
+
+
+def roa_monte_carlo(cfg: dict, gains: dict | None = None, n: int | None = None, n_jobs: int = -1) -> pd.DataFrame:
     """
-    def __init__(self, config: Union[dict, str, Path]):
-        # BaseSim handles loading when a path is passed and sets self.cfg
-        super().__init__(config)
-        cfg = getattr(self, "cfg", config if isinstance(config, dict) else {})
-
-        self.video_fps = cfg.get("video_fps", 30)
-        self.video_path = cfg.get("video_path", "videos/output.mp4")
-        self.width = int(cfg.get("video_w", 1280))
-        self.height = int(cfg.get("video_h", 720))
-
-        # capture one frame every this many physics steps
-        self.capture_every = max(1, int(1.0 / (self.dt * self.video_fps)))
-        self._frames: list[np.ndarray] = []
-
-        # Ensure the offscreen framebuffer in the model is large enough.
-        # Some URDFs/MJCFs set a small default offwidth/offheight (e.g. 640×480)
-        # which causes mujoco.Renderer to raise if we request larger images.
-        try:
-            vis = getattr(self.model, "vis", None)
-            if vis is not None and hasattr(vis, "global_"):
-                g = vis.global_
-                # If attributes exist and are smaller than requested, update them.
-                try:
-                    if getattr(g, "offwidth", 0) < self.width:
-                        g.offwidth = int(self.width)
-                    if getattr(g, "offheight", 0) < self.height:
-                        g.offheight = int(self.height)
-                except Exception:
-                    # Some model objects may not allow attribute assignment; ignore.
-                    pass
-        except Exception:
-            pass
-
-        # Try to create the renderer; if the model's offscreen framebuffer is
-        # smaller than requested, fall back to a safe size instead of failing.
-        try:
-            self._renderer = mujoco.Renderer(self.model, self.height, self.width)
-        except ValueError as e:
-            # Attempt to read framebuffer limits, choose safe fallback sizes.
-            try:
-                vis = getattr(self.model, "vis", None)
-                g = getattr(vis, "global_", None)
-                buffer_width = int(getattr(g, "offwidth", 640))
-                buffer_height = int(getattr(g, "offheight", 480))
-            except Exception:
-                buffer_width, buffer_height = 640, 480
-
-            safe_w = min(self.width, buffer_width)
-            safe_h = min(self.height, buffer_height)
-            print(
-                f"Requested video size {self.width}x{self.height} > framebuffer {buffer_width}x{buffer_height}."
-                f" Falling back to {safe_w}x{safe_h}.")
-            self.width, self.height = safe_w, safe_h
-            self._renderer = mujoco.Renderer(self.model, self.height, self.width)
-        
-        # create once, e.g. in __init__
-        self._camera = mujoco.MjvCamera()
-
-        # optional: free camera
-        self._camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-            t = i * self.dt
-            self._loop_step(t, i)
-            mujoco.mj_step(self.model, self.data)
-            self.logger.commit(t)
-            if i % self.capture_every == 0:
-                self._capture_frame()
-        self._write_video()
-        self._teardown()
-
-    def _capture_frame(self):
-        self._renderer.update_scene(self.data)
-        frame = self._renderer.render()          # returns H×W×3 uint8 RGB
-        self._frames.append(frame)
-
-    def _write_video(self):
-        import pathlib
-        pathlib.Path(self.video_path).parent.mkdir(parents=True, exist_ok=True)
-        try:
-            # Primary attempt: use imageio.mimwrite (requires ffmpeg backend)
-            imageio.mimwrite(self.video_path, self._frames, fps=self.video_fps)
-            print(f"Video saved → {self.video_path}")
-        except Exception as exc:
-            # If no suitable backend is available, try to use imageio-ffmpeg
-            print("Warning: could not write video with imageio.mimwrite:", exc)
-            try:
-                import imageio_ffmpeg
-
-                print("Using imageio-ffmpeg as fallback writer.")
-                writer = imageio.get_writer(self.video_path, fps=self.video_fps, plugin="ffmpeg")
-                for frame in self._frames:
-                    writer.append_data(frame)
-                writer.close()
-                print(f"Video saved → {self.video_path}")
-                return
-            except Exception as exc2:
-                print("Fallback with imageio-ffmpeg failed:", exc2)
-
-            # Final fallback: save frames as individual PNGs so user can assemble them
-            seq_dir = pathlib.Path(self.video_path).with_suffix("").with_name(pathlib.Path(self.video_path).stem + "_frames")
-            seq_dir.mkdir(parents=True, exist_ok=True)
-            for i, frame in enumerate(self._frames):
-                fname = seq_dir / f"frame_{i:05d}.png"
-                imageio.imwrite(str(fname), frame)
-            print(f"Could not write MP4. Saved {len(self._frames)} frames to {seq_dir}.")
-            print("To enable MP4 writing install ffmpeg support: pip install 'imageio[ffmpeg]' or pip install imageio-ffmpeg")
-
-    def _teardown(self):
-        self._renderer.close()
-```
-
-### `src/simulation/viewer_sim.py`
-
-```python
-# src/simulation/viewer_sim.py
-import mujoco
-import mujoco.viewer
-from tqdm import tqdm
-from .base_sim import BaseSim
-
-class ViewerSim(BaseSim):
+    Initial position offset uniform in a ball around p_d(0); initial attitude =
+    nominal attitude perturbed by a uniform angle about a uniformly random axis;
+    zero velocities.  "converged": ‖e_p‖ < tol and Ψ < 1e-4 at t_end.
+    "feasible": every motor force stayed inside the motor range of the MJCF.
     """
-    Real-time interactive viewer.
-    Use during development to visually inspect behaviour.
-    Not suitable for batch/headless runs.
+    mc = cfg["monte_carlo"]
+    n = n or mc["n"]
+    rng = np.random.default_rng(mc["seed"])
+    unit = lambda v: v / np.linalg.norm(v, axis=1, keepdims=True)
+    offsets = unit(rng.normal(size=(n, 3))) * mc["max_offset"] * rng.uniform(size=(n, 1)) ** (1 / 3)
+    rotvecs = unit(rng.normal(size=(n, 3))) * np.radians(mc["max_angle_deg"]) * rng.uniform(size=(n, 1))
+    f_max = float(load_model(cfg).actuator_ctrlrange[:, 1].min())
+    rows = Parallel(n_jobs=n_jobs)(
+        delayed(_roa_rollout)(cfg, gains, offsets[i], rotvecs[i], mc, f_max) for i in range(n))
+    return pd.DataFrame(rows)
+
+
+def _add_segment(scene: mujoco.MjvScene, a, b, rgba, width: float = 0.015) -> None:
+    if scene.ngeom < scene.maxgeom:
+        g = scene.geoms[scene.ngeom]
+        mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3), np.zeros(3), np.eye(3).ravel(), np.asarray(rgba, float))
+        mujoco.mjv_connector(g, mujoco.mjtGeom.mjGEOM_CAPSULE, width, np.asarray(a, float), np.asarray(b, float))
+        scene.ngeom += 1
+
+
+def render_quad(
+    cfg: dict,
+    df: pd.DataFrame,
+    path: str | Path,
+    fps: int = 30,
+    width: int = 960,
+    height: int = 540,
+    t_end: float | None = None,
+    distance: float = 3.5,
+) -> Path:
     """
-    def run(self):
-        n_steps = int(self.t_end / self.dt)
-        with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
-            for i in tqdm(range(n_steps), desc="Simulation", unit="step"):
-                t = i * self.dt
-                self._loop_step(t, i)
-                mujoco.mj_step(self.model, self.data)
-                self.logger.commit(t)
-                viewer.sync()
-```
+    Replay the logged states of simulate_quad() (no new simulation) with a camera
+    tracking the vehicle; reference circle in grey, flown path in blue.
+    """
+    import imageio.v3 as iio
 
-### `src/symbolic/kinematics.py`
+    model = load_model(cfg)
+    data = mujoco.MjData(model)
+    tr = cfg["trajectory"]
+    th = np.linspace(0, 2 * np.pi, 121)
+    circle = np.column_stack([tr["radius"] * np.cos(th), tr["radius"] * np.sin(th), np.full_like(th, tr["z_height"])])
+    t = df["t"].to_numpy()
+    idx = np.searchsorted(t, np.arange(0.0, min(t_end or t[-1], t[-1]), 1.0 / fps))
+    pos, quat = df[["x", "y", "z"]].to_numpy(), df[["qw", "qx", "qy", "qz"]].to_numpy()
 
-```python
-# src/symbolic/kinematics.py
-from sympy import symbols, Matrix, cos, sin, simplify, lambdify
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    cam.trackbodyid = model.body("quad").id
+    cam.distance, cam.azimuth, cam.elevation = distance, -60.0, -20.0
 
-def unicycle_model():
-    x, y, theta, v, omega = symbols("x y θ v ω")
-    f = Matrix([v * cos(theta), v * sin(theta), omega])
-    return {"state": (x, y, theta), "input": (v, omega), "f": f}
+    frames = []
+    with mujoco.Renderer(model, height, width, max_geom=len(idx) + 500) as renderer:
+        for k, i in enumerate(idx):
+            data.qpos[:3], data.qpos[3:7] = pos[i], quat[i]
+            mujoco.mj_forward(model, data)
+            renderer.update_scene(data, cam)
+            for a, b in zip(circle[:-1], circle[1:]):
+                _add_segment(renderer.scene, a, b, (0.4, 0.4, 0.4, 0.6))
+            for a, b in zip(pos[idx[:k]], pos[idx[1:k + 1]]):
+                _add_segment(renderer.scene, a, b, (0.12, 0.37, 0.66, 1.0))
+            frames.append(renderer.render())
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    iio.imwrite(path, np.stack(frames), fps=fps, codec="libx264", macro_block_size=2)
+    return path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Unicycle
+# ──────────────────────────────────────────────────────────────────────────────
+
+def simulate_unicycle(cfg: dict, n_points: int = 1500) -> pd.DataFrame:
+    """ẋ = v cos θ, ẏ = v sin θ, θ̇ = ω(e, θ̃) integrated with scipy's RK45."""
+    c, ic = cfg["control"], cfg["initial_state"]
+    v, R, ky, kth = c["v"], c["R"], c["ky"], c["ktheta"]
+
+    def errors(x, y, th):
+        e = np.hypot(x, y) - R
+        t_tilde = np.angle(np.exp(1j * (th - np.arctan2(y, x) - np.pi / 2)))
+        return e, t_tilde
+
+    def rhs(_, s):
+        e, tt = errors(*s)
+        omega = v * np.cos(tt) / (R + e) + ky * e * v - kth * np.sin(tt)
+        return [v * np.cos(s[2]), v * np.sin(s[2]), omega]
+
+    t = np.linspace(0, cfg["t_end"], n_points)
+    sol = solve_ivp(rhs, (0, cfg["t_end"]), [ic["x"], ic["y"], ic["theta"]], t_eval=t, rtol=1e-9, atol=1e-9)
+    x, y, th = sol.y
+    e, tt = errors(x, y, th)
+    return pd.DataFrame({"t": t, "x": x, "y": y, "e": e, "t_tilde": tt,
+                         "V": 0.5 * e**2 + (1 - np.cos(tt)) / ky})
 ```
 
 ### `src/symbolic/lyapunov.py`
 
 ```python
+"""
+src/symbolic/lyapunov.py
+
+Lyapunov path-following law for a unicycle on a circle of radius R
+(counter-clockwise), kinematic model ẋ = v cos θ, ẏ = v sin θ, θ̇ = ω
+with constant forward speed v > 0.
+
+Errors:  e = √(x² + y²) − R  (cross-track),  θ̃ = θ − (atan2(y, x) + π/2).
+
+Result (all identities computed below):
+    V = ½e² + (1 − cos θ̃)/k_y,   V̇ = −(k_θ/k_y) sin² θ̃ ≤ 0.
+LaSalle on the compact sublevel set Ω_c = {V ≤ c}, c < ½R² (which keeps
+|e| < R, i.e. away from the singularity at the circle centre) gives
+convergence to M = {(0, 0), (0, π)}.  (0, π) — driving the circle
+clockwise — is a saddle, so it attracts only a measure-zero set.  If in
+addition c < 2/k_y, (0, π) ∉ Ω_c and every trajectory starting in Ω_c
+converges to (0, 0).  The result is not global: initial conditions with
+V ≥ ½R² are not covered.
+"""
+
 import sympy as sp
 
-def derive_circular_path_following():
-    """
-    Derives the control law omega for a unicycle to follow a circular path
-    of radius R. The path is traversed counter-clockwise.
-    Returns a dictionary of symbolic expressions.
-    """
-    # Define symbolic variables
-    e, t_tilde = sp.symbols('e \\tilde{\\theta}', real=True)
-    v, R = sp.symbols('v R', real=True, positive=True)
-    k_y, k_theta = sp.symbols('k_y k_\\theta', real=True, positive=True)
-    omega = sp.symbols('omega', real=True)
-    
-    # Error Kinematics
-    # e: distance to the circle = sqrt(x^2 + y^2) - R
-    # t_tilde: heading relative to the path's tangent -> theta - (atan2(y,x) + pi/2)
-    e_dot = -v * sp.sin(t_tilde)
-    
-    # Path tangent angle derivative
-    t_p_dot = v * sp.cos(t_tilde) / (R + e)
-    
-    # Heading error derivative
+
+def derive_circular_path_following() -> dict:
+    e, t_tilde = sp.symbols(r"e \tilde{\theta}", real=True)
+    v, R = sp.symbols("v R", positive=True)
+    k_y, k_theta = sp.symbols(r"k_y k_\theta", positive=True)
+    omega = sp.Symbol(r"\omega", real=True)
+
+    # ── error kinematics ─────────────────────────────────────────────────────
+    e_dot       = -v * sp.sin(t_tilde)
+    t_p_dot     = v * sp.cos(t_tilde) / (R + e)          # rate of the path tangent angle
     t_tilde_dot = omega - t_p_dot
-    
-    # Proposed Lyapunov Candidate
-    V = 0.5 * e**2 + (1 - sp.cos(t_tilde)) / k_y
-    
-    # Derivative of Lyapunov Candidate
-    # V_dot = dV/de * e_dot + dV/dt_tilde * t_tilde_dot
-    V_dot = e * e_dot + (sp.sin(t_tilde) / k_y) * t_tilde_dot
-    
-    # Propose control law for omega
+
+    # ── Lyapunov function and control law ───────────────────────────────────
+    V         = sp.Rational(1, 2) * e**2 + (1 - sp.cos(t_tilde)) / k_y
     omega_law = t_p_dot + k_y * e * v - k_theta * sp.sin(t_tilde)
-    
-    # Substitute omega into V_dot and simplify
+
+    V_dot     = sp.diff(V, e) * e_dot + sp.diff(V, t_tilde) * t_tilde_dot
     V_dot_sub = sp.simplify(V_dot.subs(omega, omega_law))
-    
-    return {
-        'V': V,
-        'e_dot': e_dot,
-        't_tilde_dot': t_tilde_dot,
-        'omega_law': omega_law,
-        'V_dot_sub': V_dot_sub
+
+    # ── closed loop, equilibria, linearisation ──────────────────────────────
+    f = sp.Matrix([e_dot, t_tilde_dot.subs(omega, omega_law)])
+    x = sp.Matrix([e, t_tilde])
+    Jac = f.jacobian(x)
+    J_good   = sp.simplify(Jac.subs({e: 0, t_tilde: 0}))
+    J_saddle = sp.simplify(Jac.subs({e: 0, t_tilde: sp.pi}))
+
+    checks = {
+        "V_dot_is_minus_ktheta_over_ky_sin2": sp.simplify(V_dot_sub + k_theta / k_y * sp.sin(t_tilde)**2) == 0,
+        "origin_is_equilibrium":  sp.simplify(f.subs({e: 0, t_tilde: 0})) == sp.zeros(2, 1),
+        "reverse_is_equilibrium": sp.simplify(f.subs({e: 0, t_tilde: sp.pi})) == sp.zeros(2, 1),
+        # 2×2 Hurwitz ⇔ trace < 0 and det > 0
+        "origin_hurwitz": bool(sp.simplify(J_good.trace()).is_negative and sp.simplify(J_good.det()).is_positive),
+        # det < 0 ⇒ one positive and one negative eigenvalue (saddle)
+        "reverse_is_saddle": bool(sp.simplify(J_saddle.det()).is_negative),
     }
 
-if __name__ == '__main__':
+    return {
+        "V": V,
+        "e_dot": e_dot,
+        "t_tilde_dot": t_tilde_dot,
+        "omega_law": omega_law,
+        "V_dot_sub": V_dot_sub,
+        "J_origin": J_good,
+        "J_reverse": J_saddle,
+        "V_at_reverse": V.subs({e: 0, t_tilde: sp.pi}),
+        "checks": checks,
+    }
+
+
+if __name__ == "__main__":
     res = derive_circular_path_following()
-    print("Lyapunov candidate V:", res['V'])
-    print("Derivative V_dot (controlled):", res['V_dot_sub'])
+    print("V     =", res["V"])
+    print("V_dot =", res["V_dot_sub"])
+    print(res["checks"])
 ```
 
 ### `src/symbolic/quadcopter_certified_lyapunov.py`
@@ -3035,23 +2066,51 @@ if __name__ == '__main__':
 """
 src/symbolic/quadcopter_certified_lyapunov.py
 
-Symbolic Lyapunov analysis for the fully certified cascade controller.
+Symbolic stability analysis of the geometric cascade controller
+(src/control/cascade_controller.py, feedforward=True) on the full rigid-body model
 
-Each function returns a dict of SymPy expressions that can be displayed
-directly in the notebook via display(Math(sp.latex(...))).
+    ṗ = v,      m v̇ = T R e₃ − m g e₃,
+    Ṙ = R Ω̂,    J Ω̇ = τ − Ω × JΩ.
 
-Functions
----------
-derive_kinematic_certificate()
-    Full Lyapunov proof for the outer kinematic loop:
-      V, V_dot, PD proof, ND proof, LaSalle invariant set.
+Every identity below is computed by SymPy from these equations and the
+control law; nothing is asserted by hand.  Each function returns the
+expressions to display plus `checks`, a dict of booleans that are True
+only if the corresponding identity simplified to zero.
 
-derive_attitude_lyapunov()
-    Full Lyapunov proof for the inner attitude loop:
-      V_att, V_att_dot (broken), V_att_dot (certified), ND proof.
+What is proved (and what is not)
+--------------------------------
+1. derive_attitude_certificate():
+     with the full Lee et al. torque law (weighted error, diagonal gains
+     G, K_Ω) the attitude error obeys
+     J ė_Ω = −e_R − K_Ω e_Ω,  Ṙ_e = R_e ê_Ω  (autonomous), and
+     V₂ = Ψ + ½ e_Ωᵀ J e_Ω  has  V̇₂ = −e_Ωᵀ K_Ω e_Ω  exactly.
+     ⇒ (R_e, e_Ω) = (I, 0) is asymptotically stable and every initial
+       condition with V₂ < min_{i≠j}(g_i + g_j) converges to it (LaSalle on
+       a compact sublevel set that excludes all 180° equilibria).  Locally
+       the convergence is exponential.  It is NOT globally asymptotically
+       stable: no continuous feedback on SO(3) is (Bhat & Bernstein 2000).
+     Without the feedforward terms V̇₂ is sign-indefinite (explicit
+     counterexample returned).
+2. derive_position_certificate():
+     the position/velocity error obeys ė_p = e_v,
+     ė_v = −K_v K e_p − K_v e_v + Δ  with  Δ = (T/m)(R − R_d)e₃,
+     ‖Δ‖ ≤ (2T/m)√Ψ₁,  Ψ₁ = ½ tr(I − R_e) ≤ Ψ / min g.  For Δ = 0 the system is linear, Hurwitz, and
+     V₁ = xᵀPx (P from the Lyapunov equation) proves global exponential
+     stability of THAT reduced system.
+3. derive_cascade_linearization():
+     the closed loop in error coordinates is a cascade
+     (attitude → position).  Its linearization along the reference is
+     block-triangular with Hurwitz diagonal blocks and a bounded coupling,
+     hence uniformly exponentially stable; by Lyapunov's indirect method
+     (Khalil, Thm 4.15) the full nonlinear closed loop is LOCALLY
+     exponentially stable.  The size of its region of attraction is not
+     characterised analytically.
 
-derive_full_lyapunov()
-    Combined cascade Lyapunov function and its derivative.
+Assumptions shared by all results: unbounded, signed motor forces (no
+saturation); F_des ≠ 0 and F_des ∦ x_c so that R_d is defined; exact
+Ω_d = vee(R_dᵀṘ_d) and Ω̇_d.  The implementation approximates the last
+two by backward differences at the control rate (exact on the
+steady-state circle, O(dt) during transients).
 """
 
 from __future__ import annotations
@@ -3059,718 +2118,276 @@ import sympy as sp
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1.  Kinematic outer loop
+# Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def derive_kinematic_certificate() -> dict:
-    """
-    Lyapunov certificate for the kinematic position loop.
-
-    Model:   ẋ = u = v_cmd  (kinematic sim sets qpos/qvel directly)
-    Error:   ė = ẋ − ẋ_d = v_cmd − v_d = −K e
-    Candidate:  V₁ = ½ eᵀe
-    Psi is heading error
-    """
-    ex, ey, ez, epsi = sp.symbols("e_x e_y e_z e_psi", real=True)
-    kx, ky, kz, kpsi = sp.symbols("k_x k_y k_z k_psi", positive=True)
-
-    e = sp.Matrix([ex, ey, ez, epsi])
-    K = sp.diag(kx, ky, kz, kpsi)
-
-    # ── Lyapunov candidate ────────────────────────────────────────────────────
-    V = sp.Rational(1, 2) * e.dot(e)                   # ½ ‖e‖²
-
-    # ── Positive Definiteness of V ────────────────────────────────────────────
-    # V = ½(ex² + ey² + ez² + eψ²) ≥ 0,  with V = 0 iff e = 0
-    V_is_PD = sp.simplify(V) == sp.Rational(1, 2) * (ex**2 + ey**2 + ez**2 + epsi**2)
-
-    # ── Error dynamics under control law v_cmd = v_d − K e ───────────────────
-    e_dot = -K * e                                     # ė = −K e
-
-    # ── Time derivative V̇ = ∇V · ė ──────────────────────────────────────────
-    grad_V = e                                          # ∇V = e  (for V = ½‖e‖²)
-    V_dot  = grad_V.dot(e_dot)
-    V_dot  = sp.expand(V_dot)
-    # V̇ = −kx ex² − ky ey² − kz ez² − kψ eψ²
-
-    # ── Negative Definiteness of V̇ ───────────────────────────────────────────
-    # V̇ = −eᵀ K e.  Since K = diag(k_i) with k_i > 0,  K is SPD,
-    # so −eᵀ K e < 0 for all e ≠ 0.
-    V_dot_matrix_form = -e.T * K * e               # symbolic matrix form
-    V_dot_is_ND = True                              # proven: all k_i > 0
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S = {e : V̇(e) = 0} = {e : kx ex² + … = 0} = {0}  (since k_i > 0)
-    # Largest invariant set M ⊆ S is trivially the origin.
-    # ∴ by LaSalle, e(t) → 0  (GAS) — though here V̇ < 0 makes it redundant.
-    S_description = "{ e ∈ ℝ⁴ : V̇ = 0 } = { 0 }  (only origin)"
-    M_description = "M = { 0 }  →  GAS by LaSalle (and directly by V̇ < 0)"
-
-    # ── Radial unboundedness (V → ∞ as ‖e‖ → ∞) ─────────────────────────────
-    # V = ½‖e‖² is radially unbounded → trajectories bounded → GAS is global.
-
-    return {
-        "e":                 e,
-        "K":                 K,
-        "V":                 V,
-        "e_dot":             e_dot,
-        "grad_V":            grad_V,
-        "V_dot":             V_dot,
-        "V_dot_matrix":      V_dot_matrix_form,
-        "V_is_PD":           V_is_PD,
-        "V_dot_is_ND":       V_dot_is_ND,
-        "S_description":     S_description,
-        "M_description":     M_description,
-        "stability":         "GAS",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 2.  Attitude inner loop
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_attitude_lyapunov() -> dict:
-    """
-    Lyapunov certificate for the SO(3) attitude tracking loop.
-
-    The attitude Lyapunov function follows Lee et al. (2010) eq. 9:
-
-        V₂ = kR Ψ(R, R_d) + ½ eΩᵀ J eΩ
-
-    where Ψ = ½ tr(I − R_dᵀ R) is the attitude tracking function on SO(3).
-
-    For the symbolic analysis we work with the quadratic approximation
-    valid near the equilibrium (small attitude error):
-
-        Ψ ≈ ¼ ‖e_R‖²      (Lee et al. Lemma 1)
-
-    so  V₂ ≈ ¼ kR ‖e_R‖² + ½ eΩᵀ J eΩ   (positive definite near origin).
-    """
-    kR, kw         = sp.symbols("k_R k_w", positive=True)
-    eRx, eRy, eRz  = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}", real=True)
-    eOx, eOy, eOz  = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}", real=True)
-    Jx, Jy, Jz     = sp.symbols("J_x J_y J_z", positive=True)
-    Ox, Oy, Oz     = sp.symbols(r"\Omega_x \Omega_y \Omega_z", real=True)
-
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-    Om   = sp.Matrix([Ox, Oy, Oz])
-
-    # ── Lyapunov candidate (quadratic approx near equilibrium) ───────────────
-    Psi   = sp.Rational(1, 4) * e_R.dot(e_R)                    # Ψ ≈ ¼‖e_R‖²
-    # e_Om.T * J * e_Om is a 1×1 MutableDenseMatrix — extract scalar first
-    V_att = kR * Psi + sp.Rational(1, 2) * (e_Om.T * J * e_Om)[0, 0]
-
-    # ── Positive Definiteness ─────────────────────────────────────────────────
-    # V₂ = ¼ kR ‖e_R‖² + ½ eΩᵀ J eΩ
-    # Both terms ≥ 0;  = 0  iff  e_R = 0 AND e_Ω = 0.
-    # J is SPD (physical inertia), kR > 0  →  V₂ is PD.
-
-    # ── V̇₂ WITHOUT gyroscopic cancellation (broken controller) ───────────────
-    # Ω̇ = J⁻¹ τ  (simplified, ignoring Coriolis)
-    # With τ = −kR e_R − kΩ e_Ω:
-    #   ė_R ≈ e_Ω  (linearised SO(3) kinematics near equilibrium)
-    #   ė_Ω = J⁻¹ τ = J⁻¹(−kR e_R − kΩ e_Ω)
-    #
-    # V̇₂_broken = ∂V₂/∂e_R · ė_R + ∂V₂/∂e_Ω · ė_Ω
-    #           = ½kR e_Rᵀ e_Ω + eΩᵀ J J⁻¹ τ
-    #           = ½kR e_Rᵀ e_Ω + eΩᵀ(−kR e_R − kΩ e_Ω)
-    #           = ½kR e_Rᵀ e_Ω − kR eΩᵀ e_R − kΩ ‖e_Ω‖²
-    # The cross terms do NOT cancel → V̇ is not ND.
-    # (Full Lee derivation shows the Coriolis term Ω × JΩ is what cancels them.)
-
-    e_R_dot_approx  = e_Om                             # ė_R ≈ e_Ω
-    J_inv           = sp.diag(1/Jx, 1/Jy, 1/Jz)
-    tau_no_fix      = -kR * e_R - kw * e_Om
-
-    dV_deR  = sp.Rational(1, 2) * kR * e_R
-    dV_deOm = J * e_Om
-
-    V_att_dot_broken = dV_deR.dot(e_R_dot_approx) + dV_deOm.dot(J_inv * tau_no_fix)
-    V_att_dot_broken = sp.expand(V_att_dot_broken)
-
-    # ── V̇₂ WITH gyroscopic cancellation (certified controller) ───────────────
-    # τ_cert = −kR e_R − kΩ e_Ω + Ω × JΩ
-    # The Ω × JΩ term cancels the Coriolis contribution in V̇:
-    #   eΩᵀ J J⁻¹ Ω × JΩ = eΩᵀ J⁻¹ J (Ω × JΩ) contributes exactly
-    #   the term needed to cancel the cross terms.
-    #
-    # Result (Lee et al. Theorem 1):
-    #   V̇₂_cert = −kR e_Rᵀ e_Ω + eΩᵀ(−kR e_R − kΩ e_Ω)
-    #            = −kR‖e_R‖² − kΩ‖e_Ω‖²   wait — let's compute this properly
-
-    gyro           = Om.cross(J * Om)                  # Ω × JΩ
-    tau_cert       = -kR * e_R - kw * e_Om + gyro
-    V_att_dot_cert = dV_deR.dot(e_R_dot_approx) + dV_deOm.dot(J_inv * tau_cert)
-    V_att_dot_cert = sp.expand(V_att_dot_cert)
-
-    # ── Negative Definiteness of V̇₂_cert ─────────────────────────────────────
-    # V̇₂_cert = −kR ‖e_R‖² − kΩ ‖e_Ω‖² + (cross terms that cancel via gyro)
-    # With kR, kΩ > 0 and cross terms cancelled:  V̇₂_cert < 0  ∀ (e_R, e_Ω) ≠ 0
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S_att = {(e_R, e_Ω) : V̇₂_cert = 0}
-    # V̇₂_cert = 0  iff  kR‖e_R‖² = 0  AND  kΩ‖e_Ω‖² = 0
-    #          iff  e_R = 0  AND  e_Ω = 0
-    # Largest invariant set M_att = {(0, 0)}  →  attitude GAS by LaSalle.
-
-    return {
-        "V_att":              V_att,
-        "Psi":                Psi,
-        "V_att_dot_broken":   V_att_dot_broken,
-        "V_att_dot_cert":     V_att_dot_cert,
-        "gyro_term":          gyro,
-        "tau_no_fix":         tau_no_fix,
-        "tau_cert":           tau_cert,
-        "V_att_is_PD":        True,
-        "V_att_dot_cert_is_ND": True,
-        "S_att":   "{ (e_R, e_Ω) : V̇₂ = 0 } = { (0, 0) }",
-        "M_att":   "M_att = { (0, 0) }  →  attitude GAS by LaSalle",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 3.  Combined cascade Lyapunov function
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_full_lyapunov() -> dict:
-    """
-    Combined Lyapunov function for the full cascade system.
-
-    V_total = V₁(e_p) + V₂(e_R, e_Ω)
-
-    Under the time-scale separation assumption (inner loop faster than outer):
-      V̇_total ≤ −α‖e_p‖² − β₁‖e_R‖² − β₂‖e_Ω‖²  < 0
-
-    where α, β₁, β₂ > 0 depend on the gains.
-    """
-    ex, ey, ez          = sp.symbols("e_x e_y e_z", real=True)
-    eRx, eRy, eRz       = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}", real=True)
-    eOx, eOy, eOz       = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}", real=True)
-    epsi                = sp.Symbol("e_psi", real=True)
-    kx, ky, kz, kpsi    = sp.symbols("k_x k_y k_z k_psi", positive=True)
-    kR, kw              = sp.symbols("k_R k_w", positive=True)
-    Jx, Jy, Jz          = sp.symbols("J_x J_y J_z", positive=True)
-
-    e_p  = sp.Matrix([ex, ey, ez, epsi])
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-
-    # ── Total Lyapunov function ───────────────────────────────────────────────
-    V1 = sp.Rational(1, 2) * e_p.dot(e_p)
-    V2 = sp.Rational(1, 4) * kR * e_R.dot(e_R) + sp.Rational(1, 2) * (e_Om.T * J * e_Om)[0, 0]
-    V_total = V1 + V2
-
-    # ── Total V̇ (under certified control + time-scale separation) ────────────
-    K  = sp.diag(kx, ky, kz, kpsi)
-    V1_dot = -(e_p.T * K * e_p)[0, 0]             # outer loop contribution
-    V2_dot = -kR * e_R.dot(e_R) - kw * e_Om.dot(e_Om)  # inner loop contribution
-
-    V_total_dot = sp.expand(V1_dot + V2_dot)
-
-    # ── Definiteness ──────────────────────────────────────────────────────────
-    # V_total  is PD:  sum of two PD functions
-    # V̇_total  is ND:  −eₚᵀKep − kR‖e_R‖² − kΩ‖e_Ω‖² < 0  ∀ non-zero state
-    # V_total is radially unbounded  →  GAS is GLOBAL
-
-    # ── LaSalle invariant set ─────────────────────────────────────────────────
-    # S = {(e_p, e_R, e_Ω) : V̇_total = 0}
-    #   = {e_p = 0} ∩ {e_R = 0} ∩ {e_Ω = 0}  = {origin}
-    # M = {origin}  →  GAS for the full cascade.
-
-    return {
-        "V1":           V1,
-        "V2":           V2,
-        "V_total":      V_total,
-        "V1_dot":       V1_dot,
-        "V2_dot":       V2_dot,
-        "V_total_dot":  V_total_dot,
-        "is_GAS":       True,
-        "S_total":      "{ (e_p, e_R, e_Ω) : V̇_total = 0 } = { origin }",
-        "M_total":      "M = { origin }  →  full cascade GAS",
-    }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 4.  Gyroscopic fix (unchanged, kept for backward compatibility)
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_gyroscopic_fix() -> dict:
-    """
-    Show that adding Ω × JΩ to the torque restores the Lee et al.
-    attitude certificate, and that for a circle with constant ω the
-    remaining inertial feedforward term vanishes.
-    """
-    kR, kw = sp.symbols("k_R k_w", positive=True)
-    eRx, eRy, eRz = sp.symbols(r"e_{R_x} e_{R_y} e_{R_z}")
-    eOx, eOy, eOz = sp.symbols(r"e_{\Omega_x} e_{\Omega_y} e_{\Omega_z}")
-    Jx, Jy, Jz    = sp.symbols("J_x J_y J_z", positive=True)
-    Ox, Oy, Oz    = sp.symbols(r"\Omega_x \Omega_y \Omega_z")
-    omega_d       = sp.Symbol(r"\omega_d", positive=True)
-
-    e_R  = sp.Matrix([eRx, eRy, eRz])
-    e_Om = sp.Matrix([eOx, eOy, eOz])
-    J    = sp.diag(Jx, Jy, Jz)
-    Om   = sp.Matrix([Ox, Oy, Oz])
-
-    tau_no_fix = -kR * e_R - kw * e_Om
-    gyro       = Om.cross(J * Om)
-    tau_fixed  = -kR * e_R - kw * e_Om + gyro
-
-    Om_d   = sp.Matrix([0, 0, omega_d])
-    Om_hat = sp.Matrix([
-        [  0, -Oz,  Oy],
-        [ Oz,   0, -Ox],
-        [-Oy,  Ox,   0],
-    ])
-    residual_ff            = sp.simplify(J * (Om_hat * Om_d))
-    residual_ff_at_hover   = residual_ff.subs({Ox: 0, Oy: 0, Oz: omega_d})
-
-    return {
-        "tau_no_fix":           tau_no_fix,
-        "tau_fixed":            tau_fixed,
-        "gyro_term":            gyro,
-        "residual_ff":          residual_ff,
-        "residual_ff_at_hover": residual_ff_at_hover,
-    }
-```
-
-### `src/symbolic/quadcopter_dynamic_control.py`
-
-```python
-"""
-src/symbolic/quadcopter_dynamic_control.py
-
-Symbolic derivation of the cascade control architecture for a quadcopter.
-
-Outputs
--------
-derive_allocation()
-    Returns the 4×4 allocation matrix A and its inverse A_inv, together
-    with the symbolic motor forces as functions of [T, τx, τy, τz].
-
-derive_cascade()
-    Returns the full symbolic cascade: position error → desired acceleration
-    → desired thrust vector → attitude error → torques.
-"""
-
-from __future__ import annotations
-import sympy as sp
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 1.  Motor allocation matrix
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_allocation() -> dict:
-    """
-    Derive the 4x4 allocation matrix for an X-configuration quadrotor.
-
-    Motor layout (top view, X-config):
-         FL(2)  FR(1)
-           \\   /
-            \\ /
-            / \\
-           /   \\
-         BL(4)  BR(3)
-
-    Motor positions relative to CoM:
-        FR: (+d, -d),  FL: (+d, +d),  BR: (-d, -d),  BL: (-d, +d)
-    where d = L / sqrt(2),  L = arm length (centre → motor).
-
-    Spin directions (looking down):
-        FR, BL → CW  (negative yaw reaction)
-        FL, BR → CCW (positive yaw reaction)
-
-    Each motor i produces:
-        - Thrust fi along body z
-        - Reaction yaw torque: ±km * fi  (km = torque/thrust ratio)
-
-    The total wrench on the body:
-        T  = f1 + f2 + f3 + f4
-        τx = d (-f1 + f2 - f3 + f4)   [roll]
-        τy = d (-f1 - f2 + f3 + f4)   [pitch]
-        τz = km(-f1 + f2 + f3 - f4)   [yaw]
-    """
-    d, km    = sp.symbols("d k_m", positive=True)
-    f1, f2, f3, f4 = sp.symbols("f_1 f_2 f_3 f_4", nonneg=True)
-    T_s, tx, ty, tz = sp.symbols(r"T \tau_x \tau_y \tau_z")
-
-    # Allocation matrix A such that  [T, τx, τy, τz]^T = A * [f1..f4]^T
-    A = sp.Matrix([
-        [ 1,    1,    1,    1  ],
-        [-d,   +d,   -d,   +d ],
-        [-d,   -d,   +d,   +d ],
-        [-km,  +km,  +km,  -km],
+def hat(w: sp.Matrix) -> sp.Matrix:
+    """ŵ such that ŵ v = w × v."""
+    return sp.Matrix([
+        [    0, -w[2],  w[1]],
+        [ w[2],     0, -w[0]],
+        [-w[1],  w[0],     0],
     ])
 
-    A_inv = A.inv()
-    A_inv_simplified = sp.simplify(A_inv)
 
-    # Symbolic motor forces from desired wrench
-    wrench = sp.Matrix([T_s, tx, ty, tz])
-    forces = A_inv_simplified * wrench
-    forces = sp.simplify(forces)
+def vee(S: sp.Matrix) -> sp.Matrix:
+    return sp.Matrix([S[2, 1], S[0, 2], S[1, 0]])
+
+
+def _is_zero(expr) -> bool:
+    """True iff expr (scalar or matrix) simplifies to exactly zero."""
+    entries = list(expr) if isinstance(expr, sp.MatrixBase) else [expr]
+    return all(sp.expand(e) == 0 or sp.simplify(e) == 0 for e in entries)
+
+
+def _generic_matrix(name: str) -> sp.Matrix:
+    """3×3 matrix of independent real symbols (identities proved for it hold for any R_e)."""
+    return sp.Matrix(3, 3, lambda i, j: sp.Symbol(f"{name}_{{{i+1}{j+1}}}", real=True))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1.  Attitude loop
+# ──────────────────────────────────────────────────────────────────────────────
+
+def derive_attitude_certificate() -> dict:
+    """
+    Exact Lyapunov analysis of the attitude error (R_e, e_Ω), R_e = R_dᵀR, with
+    the weighted error of the controller:
+
+        Ψ = ½ tr(G (I − R_e)),   e_R = ½ vee(G R_e − R_eᵀ G),   G = diag(g) ≻ 0,
+        τ = −e_R − K_Ω e_Ω + Ω × JΩ − J (Ω̂ R_eᵀ Ω_d − R_eᵀ Ω̇_d),  K_Ω = diag ≻ 0.
+
+    Kinematics.  From Ṙ = RΩ̂, Ṙ_d = R_dΩ̂_d and R ŵ Rᵀ = (Rw)^ on SO(3):
+        Ṙ_e = R_e ê_Ω,   e_Ω = Ω − R_eᵀΩ_d.
+    The identity R ŵ Rᵀ = (Rw)^ is verified on the Euler–Rodrigues
+    parametrisation; the remaining identities are verified for a generic
+    3×3 matrix R_e, so they need no small-angle approximation.
+
+    Critical points.  e_R = 0 ⇔ S = G R_e is symmetric ⇒ S² = S Sᵀ = G², which
+    forces R_e = I or a rotation by π about some axis n (case analysis on the
+    eigenvalues of G).  At such a rotation Ψ = tr G − nᵀG n ≥ min_{i≠j}(g_i + g_j).
+    Hence on {V₂ < min_{i≠j}(g_i + g_j)} the only point with e_R = 0 is R_e = I.
+    """
+    # ── symbols ──────────────────────────────────────────────────────────────
+    g = sp.symbols("g_1:4", positive=True)
+    kW = [sp.Symbol(rf"k_{{\Omega{i}}}", positive=True) for i in (1, 2, 3)]
+    G, KW = sp.diag(*g), sp.diag(*kW)
+    J1, J2, J3 = sp.symbols("J_1 J_2 J_3", positive=True)
+    J = sp.diag(J1, J2, J3)
+    Om   = sp.Matrix(sp.symbols(r"\Omega_1:4", real=True))
+    Omd  = sp.Matrix(sp.symbols(r"\Omega_{d1} \Omega_{d2} \Omega_{d3}", real=True))
+    dOmd = sp.Matrix(sp.symbols(r"\dot\Omega_{d1} \dot\Omega_{d2} \dot\Omega_{d3}", real=True))
+    Re   = _generic_matrix("r")
+
+    # ── SO(3) identity R ŵ Rᵀ = (Rw)^  (Euler–Rodrigues, homogeneous form) ───
+    q0, q1, q2, q3 = sp.symbols("q_0:4", real=True)
+    w = sp.Matrix(sp.symbols("w_1:4", real=True))
+    M = sp.Matrix([
+        [q0**2+q1**2-q2**2-q3**2, 2*(q1*q2-q0*q3),         2*(q1*q3+q0*q2)],
+        [2*(q1*q2+q0*q3),         q0**2-q1**2+q2**2-q3**2, 2*(q2*q3-q0*q1)],
+        [2*(q1*q3-q0*q2),         2*(q2*q3+q0*q1),         q0**2-q1**2-q2**2+q3**2],
+    ])                                            # R = M / |q|²,  M Mᵀ = |q|⁴ I
+    n2 = q0**2 + q1**2 + q2**2 + q3**2
+    check_conj = _is_zero(M * hat(w) * M.T - n2 * hat(M * w))
+    check_orth = _is_zero(M * M.T - n2**2 * sp.eye(3))
+
+    # ── error quantities ────────────────────────────────────────────────────
+    e_R  = sp.Rational(1, 2) * vee(G * Re - Re.T * G)
+    Psi  = sp.Rational(1, 2) * (G * (sp.eye(3) - Re)).trace()
+    e_W  = Om - Re.T * Omd
+
+    # ── Ψ̇ = e_R · e_Ω   (from Ṙ_e = R_e ê_Ω) ────────────────────────────────
+    Re_dot  = Re * hat(e_W)
+    Psi_dot = -sp.Rational(1, 2) * (G * Re_dot).trace()
+    check_Psi_dot = _is_zero(Psi_dot - e_R.dot(e_W))
+
+    # ── ė_Ω  from Euler's equation and Ṙ_eᵀ = −ê_Ω R_eᵀ ─────────────────────
+    def e_W_dot(tau):
+        Om_dot = J.inv() * (tau - Om.cross(J * Om))
+        return Om_dot - (Re_dot.T * Omd + Re.T * dOmd)
+
+    tau_full = (-e_R - KW * e_W + Om.cross(J * Om)
+                - J * (hat(Om) * Re.T * Omd - Re.T * dOmd))
+    tau_pd   = -e_R - KW * e_W
+
+    check_closed_loop = _is_zero(J * e_W_dot(tau_full) - (-e_R - KW * e_W))
+
+    # ── Lyapunov function and its derivative (J constant and symmetric) ─────
+    V2 = Psi + sp.Rational(1, 2) * (e_W.T * J * e_W)[0, 0]
+
+    def V2_dot(tau):
+        return Psi_dot + (e_W.T * J * e_W_dot(tau))[0, 0]
+
+    check_V2_dot = _is_zero(V2_dot(tau_full) + (e_W.T * KW * e_W)[0, 0])
+
+    # ── PD law only: residual and an explicit point where V̇₂ > 0 ───────────
+    V2_dot_pd = sp.expand(V2_dot(tau_pd))
+    residual_pd = sp.expand(V2_dot_pd + (e_W.T * KW * e_W)[0, 0])
+    # R_e = I, Ω_d = 0, Ω = e_Ω = (0.1,0,0), Ω̇_d = (−1000,0,0):
+    # residual = −e_Ωᵀ J Ω̇_d = 0.35 > k_Ω1‖e_Ω‖² = 0.025
+    numeric_point = {**{Re[i, j]: int(i == j) for i in range(3) for j in range(3)},
+                     Om[0]: sp.Rational(1, 10), Om[1]: 0, Om[2]: 0,
+                     **{Omd[i]: 0 for i in range(3)},
+                     dOmd[0]: -1000, dOmd[1]: 0, dOmd[2]: 0,
+                     J1: sp.Rational(35, 10000), J2: sp.Rational(35, 10000), J3: sp.Rational(6, 1000),
+                     **{gi: sp.Rational(1, 2) for gi in g}, **{ki: sp.Rational(5, 2) for ki in kW}}
+    V2_dot_pd_counterexample = V2_dot_pd.subs(numeric_point)
+
+    # In set-point regulation (Ω_d = Ω̇_d = 0) the gyroscopic term is harmless:
+    # e_Ω = Ω and Ωᵀ(Ω × JΩ) = 0.
+    regulation = {**{Omd[i]: 0 for i in range(3)}, **{dOmd[i]: 0 for i in range(3)}}
+    check_pd_regulation = _is_zero(residual_pd.subs(regulation))
+
+    # ── Ψ at a rotation by π about a unit axis n: R = 2nnᵀ − I ──────────────
+    n = sp.Matrix(sp.symbols("n_1:4", real=True))
+    R_pi = 2 * n * n.T - sp.eye(3)
+    Psi_pi = Psi.subs({Re[i, j]: R_pi[i, j] for i in range(3) for j in range(3)})
+    check_Psi_pi = _is_zero(Psi_pi - (G.trace() - (n.T * G * n)[0, 0]))
+    # ⇒ for ‖n‖ = 1: Ψ(π-rotation) = tr G − nᵀGn ≥ tr G − max g = min_{i≠j}(g_i + g_j)
+
+    # ── S = G R symmetric ⇒ S² = G²  (uses only R Rᵀ = I) ───────────────────
+    # S Sᵀ = G R Rᵀ G = G², and S = Sᵀ ⇒ S² = S Sᵀ.
+    check_S2 = _is_zero((G * M) * (G * M).T - n2**2 * G * G)
+
+    # ── linearisation at (I, 0): R_e ≈ I + θ̂,  e_R ≈ ½(tr G·I − G) θ,  θ̇ ≈ e_Ω ──
+    th = sp.Matrix(sp.symbols(r"\theta_1:4", real=True))
+    e_R_lin = sp.Rational(1, 2) * vee(G * hat(th) + hat(th) * G)
+    stiffness = sp.Rational(1, 2) * (G.trace() * sp.eye(3) - G)
+    check_lin = _is_zero(e_R_lin - stiffness * th)
+    s = sp.Symbol("s")
+    char_polys = [sp.Poly(Ji * s**2 + kWi * s + stiffness[i, i], s)
+                  for i, (Ji, kWi) in enumerate(zip((J1, J2, J3), kW))]
+    check_hurwitz = all(all(c.is_positive for c in p.all_coeffs()) for p in char_polys)
 
     return {
-        "A":       A,
-        "A_inv":   A_inv_simplified,
-        "f1":      forces[0],
-        "f2":      forces[1],
-        "f3":      forces[2],
-        "f4":      forces[3],
-        "symbols": {"d": d, "km": km, "T": T_s, "tx": tx, "ty": ty, "tz": tz},
+        "e_R": e_R, "Psi": Psi, "e_W": e_W,
+        "Psi_dot": e_R.dot(e_W),
+        "tau_full": tau_full, "tau_pd": tau_pd,
+        "closed_loop": -e_R - KW * e_W,
+        "V2": V2,
+        "V2_dot_full": -sum(ki * sp.Symbol(rf"e_{{\Omega{i}}}")**2 for i, ki in enumerate(kW, 1)),
+        "residual_pd": residual_pd,
+        "V2_dot_pd_counterexample": V2_dot_pd_counterexample,
+        "stiffness": stiffness,
+        "level_bound": "min_{i≠j}(g_i + g_j)",
+        "char_polys": [p.as_expr() for p in char_polys],
+        "symbols": {"G": G, "KW": KW, "J": J, "Om": Om, "Omd": Omd, "dOmd": dOmd, "Re": Re},
+        "checks": {
+            "SO3_conjugation_identity": check_conj and check_orth,
+            "Psi_dot_equals_eR_dot_eW": check_Psi_dot,
+            "closed_loop_J_eW_dot": check_closed_loop,
+            "V2_dot_equals_minus_eW_KW_eW": check_V2_dot,
+            "pd_V2_dot_positive_somewhere": bool(V2_dot_pd_counterexample > 0),
+            "pd_harmless_in_regulation": check_pd_regulation,
+            "Psi_at_pi_rotation_is_trG_minus_nGn": check_Psi_pi,
+            "GR_symmetric_implies_S2_equals_G2": check_S2,
+            "linearisation_stiffness": check_lin,
+            "linearisation_hurwitz": check_hurwitz,
+        },
     }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2.  Cascade: position → acceleration → thrust vector → attitude
+# 2.  Position loop
 # ──────────────────────────────────────────────────────────────────────────────
 
-def derive_cascade() -> dict:
+def derive_position_certificate() -> dict:
     """
-    Symbolic derivation of the full cascade control law.
-
-    Outer loop   (position Lyapunov, same as kinematic):
-        v_cmd = v_d  - K_pos * e_pos
-
-    Middle loop  (velocity → desired acceleration):
-        a_des = K_vel * (v_cmd - v)
-
-    Thrust vector:
-        F_des = m * (a_des + g * e3)
-        T     = ||F_des||
-
-    Attitude control uses a geometric approach on SO(3) whose
-    symbolic form is too involved for SymPy; the key equations
-    are presented analytically in the docstring and comments.
-
-    Returns symbolic expressions for the outer/middle loops and
-    the thrust decomposition.
+    Translational error dynamics under
+        a_des = k_v(ṗ_d − K e_p − ṗ) + p̈_d,   F_des = m(a_des + g e₃) = T R_d e₃,
+    with thrust T = ‖F_des‖ applied along the actual body axis R e₃.
     """
-    # ── symbols ──
-    t  = sp.Symbol("t")
     m, g = sp.symbols("m g", positive=True)
+    k = sp.symbols("k_x k_y k_z", positive=True)
+    kvs = sp.symbols("k_{vx} k_{vy} k_{vz}", positive=True)
+    K, kv = sp.diag(*k), sp.diag(*kvs)
+    T = sp.Symbol("T", positive=True)
+    e_p  = sp.Matrix(sp.symbols("e_{p1:4}", real=True))
+    e_v  = sp.Matrix(sp.symbols("e_{v1:4}", real=True))
+    pdd  = sp.Matrix(sp.symbols(r"\ddot{p}_{d1:4}", real=True))
+    Rd   = _generic_matrix("R_d")
+    Re   = _generic_matrix("r")
+    e3   = sp.Matrix([0, 0, 1])
 
-    # position errors
-    ex, ey, ez = sp.symbols("e_x e_y e_z")
+    a_des = -kv * K * e_p - kv * e_v + pdd                         # = K_v(ṗ_d − K e_p − ṗ) + p̈_d
+    # R_d is built so that its third column is F_des / T
+    Rd = Rd.copy()
+    Rd[:, 2] = m * (a_des + g * e3) / T
+    acc   = (T / m) * Rd * Re * e3 - g * e3                         # v̇ = (T/m) R e₃ − g e₃,  R = R_d R_e
+    Delta = (T / m) * Rd * (Re - sp.eye(3)) * e3
+    e_v_dot = acc - pdd
+    check_error_dyn = _is_zero(e_v_dot - (-kv * K * e_p - kv * e_v + Delta))
 
-    # velocities
-    vx, vy, vz   = sp.symbols("v_x v_y v_z")
-    vxd, vyd, vzd = sp.symbols(r"v_{xd} v_{yd} v_{zd}")
+    # ‖(R_e − I)e₃‖² = 2 − 2 r₃₃  (R_e orthogonal)  and  4Ψ − that = 4 − 2r₁₁ − 2r₂₂ ≥ 0
+    Psi = sp.Rational(1, 2) * (sp.eye(3) - Re).trace()
+    gap = sp.expand(4 * Psi - (2 - 2 * Re[2, 2]))
 
-    # gains
-    kx, ky, kz   = sp.symbols("k_x k_y k_z", positive=True)
-    kv           = sp.Symbol(r"k_v", positive=True)
-
-    # ── outer loop (Lyapunov, same as kinematic notebook) ──
-    vx_cmd = vxd - kx * ex
-    vy_cmd = vyd - ky * ey
-    vz_cmd = vzd - kz * ez
-
-    # ── middle loop: velocity error → desired acceleration ──
-    ax_des = kv * (vx_cmd - vx)
-    ay_des = kv * (vy_cmd - vy)
-    az_des = kv * (vz_cmd - vz)
-
-    # ── thrust vector in world frame ──
-    Fx = m * ax_des
-    Fy = m * ay_des
-    Fz = m * (az_des + g)
-    T  = sp.sqrt(Fx**2 + Fy**2 + Fz**2)
-
-    # ── hover condition (ex=ey=ez=0, v=vd) ──
-    T_hover = sp.simplify(T.subs({
-        ex: 0, ey: 0, ez: 0,
-        vx: vxd, vy: vyd, vz: vzd,
-    }))
-
-    # ── Vdot for outer-loop Lyapunov (already proven GAS) ──
-    V = sp.Rational(1, 2) * (ex**2 + ey**2 + ez**2)
-    V_dot = (ex * (vx_cmd - vxd) + ey * (vy_cmd - vyd) + ez * (vz_cmd - vzd))
-    V_dot = sp.expand(V_dot)
+    # ── per-axis linear system  ẋ_i = A_i x_i,  x_i = (e_p,i, e_v,i) ─────────
+    P_list, checks_P = [], []
+    for ki, kvi in zip(k, kvs):
+        A = sp.Matrix([[0, 1], [-kvi * ki, -kvi]])
+        p11, p12, p22 = sp.symbols("p_11 p_12 p_22")
+        P = sp.Matrix([[p11, p12], [p12, p22]])
+        sol = sp.solve(list(A.T * P + P * A + sp.eye(2)), [p11, p12, p22], dict=True)[0]
+        P = sp.simplify(P.subs(sol))
+        checks_P.append(bool(sp.simplify(P[0, 0]).is_positive and sp.factor(P.det()).is_positive))
+        P_list.append(P)
 
     return {
-        # outer loop
-        "vx_cmd":  vx_cmd,
-        "vy_cmd":  vy_cmd,
-        "vz_cmd":  vz_cmd,
-        # middle loop
-        "ax_des":  ax_des,
-        "ay_des":  ay_des,
-        "az_des":  az_des,
-        # thrust
-        "Fx": Fx, "Fy": Fy, "Fz": Fz,
-        "T":  T,
-        "T_hover": T_hover,
-        # Lyapunov
-        "V":     V,
-        "V_dot": V_dot,
-    }
-```
-
-### `src/symbolic/quadcopter_ff_dynamic_control.py`
-
-```python
-"""
-src/symbolic/quadcopter_dynamic_control.py
-
-Symbolic derivation of the cascade control architecture for a quadcopter.
-
-Outputs
--------
-derive_allocation()
-    Returns the 4×4 allocation matrix A and its inverse A_inv, together
-    with the symbolic motor forces as functions of [T, τx, τy, τz].
-
-derive_cascade()
-    Returns the full symbolic cascade: position error → desired acceleration
-    → desired thrust vector → attitude error → torques.
-"""
-
-from __future__ import annotations
-import sympy as sp
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 1.  Motor allocation matrix
-# ──────────────────────────────────────────────────────────────────────────────
-
-def derive_allocation() -> dict:
-    """
-    Derive the 4×4 allocation matrix for an X-configuration quadrotor.
-
-    Motor layout (top view, X-config):
-         FL(2)  FR(1)
-           \\   /
-            \\ /
-            / \\
-           /   \\
-         BL(4)  BR(3)
-
-    Motor positions relative to CoM:
-        FR: (+d, -d),  FL: (+d, +d),  BR: (-d, -d),  BL: (-d, +d)
-    where d = L / sqrt(2),  L = arm length (centre → motor).
-
-    Spin directions (looking down):
-        FR, BL → CW  (negative yaw reaction)
-        FL, BR → CCW (positive yaw reaction)
-
-    Each motor i produces:
-        - Thrust fi along body z
-        - Reaction yaw torque: ±km * fi  (km = torque/thrust ratio)
-
-    The total wrench on the body:
-        T  = f1 + f2 + f3 + f4
-        τx = d (-f1 + f2 - f3 + f4)   [roll]
-        τy = d (-f1 - f2 + f3 + f4)   [pitch]
-        τz = km(-f1 + f2 + f3 - f4)   [yaw]
-    """
-    d, km    = sp.symbols("d k_m", positive=True)
-    f1, f2, f3, f4 = sp.symbols("f_1 f_2 f_3 f_4", nonneg=True)
-    T_s, tx, ty, tz = sp.symbols(r"T \tau_x \tau_y \tau_z")
-
-    # Allocation matrix A such that  [T, τx, τy, τz]^T = A * [f1..f4]^T
-    A = sp.Matrix([
-        [ 1,    1,    1,    1  ],
-        [-d,   +d,   -d,   +d ],
-        [-d,   -d,   +d,   +d ],
-        [-km,  +km,  +km,  -km],
-    ])
-
-    A_inv = A.inv()
-    A_inv_simplified = sp.simplify(A_inv)
-
-    # Symbolic motor forces from desired wrench
-    wrench = sp.Matrix([T_s, tx, ty, tz])
-    forces = A_inv_simplified * wrench
-    forces = sp.simplify(forces)
-
-    return {
-        "A":       A,
-        "A_inv":   A_inv_simplified,
-        "f1":      forces[0],
-        "f2":      forces[1],
-        "f3":      forces[2],
-        "f4":      forces[3],
-        "symbols": {"d": d, "km": km, "T": T_s, "tx": tx, "ty": ty, "tz": tz},
+        "a_des": a_des,
+        "Delta": Delta,
+        "e_v_dot": -kv * K * e_p - kv * e_v + Delta,
+        "Psi_gap": gap,
+        "P": P_list,
+        "char_poly": [sp.Symbol("s")**2 + kvi * sp.Symbol("s") + kvi * ki for ki, kvi in zip(k, kvs)],
+        "checks": {
+            "error_dynamics": check_error_dyn,
+            "Delta_bound_gap_is_4_minus_2r11_minus_2r22": _is_zero(gap - (4 - 2 * Re[0, 0] - 2 * Re[1, 1])),
+            "P_positive_definite_all_axes": all(checks_P),
+        },
     }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2.  Cascade: position → acceleration → thrust vector → attitude
+# 3.  Full cascade: linearisation along the reference
 # ──────────────────────────────────────────────────────────────────────────────
 
-def derive_cascade() -> dict:
+def derive_cascade_linearization() -> dict:
     """
-    Symbolic derivation of the full cascade control law with feedforward.
-
-    Outer loop   (position Lyapunov, same as kinematic):
-        v_cmd = v_d  - K_pos * e_pos
-
-    Middle loop  (velocity → desired acceleration + feedforward):
-        a_des = K_vel * (v_cmd - v) + a_ff
-        where a_ff = ẍ_d is the known second derivative of the reference.
-
-    For a circle:  a_ff = [-Rω²cos(ωt), -Rω²sin(ωt), 0]
-
-    Thrust vector:
-        F_des = m * (a_des + g * e3)
-        T     = ||F_des||
+    State (x, ξ) with x = (e_p, e_v) ∈ ℝ⁶ and ξ = (θ, e_Ω) ∈ ℝ⁶, R_e = exp(θ̂).
+    Exact closed loop:  ẋ = A x + Δ(t, x, R_e),   (Ṙ_e, ė_Ω) = f(R_e, e_Ω).
+    Linearising Δ = (T/m) R_d (R_e − I) e₃ at θ = 0 gives
+        Δ ≈ (T/m) R_d (θ̂ e₃) = −(T/m) R_d ê₃ θ  =: B(t) θ,
+    so the Jacobian is block upper-triangular  [[A, [B(t) 0]], [0, A_ξ]].
+    A and A_ξ are constant and Hurwitz; B(t) is bounded because along the
+    reference T = m‖p̈_d + g e₃‖ ≥ m g > 0 is bounded.  Hence the
+    linearisation is uniformly exponentially stable and, by Khalil Thm 4.15,
+    the origin of the nonlinear error system is locally exponentially stable.
     """
-    # ── symbols ──
-    t        = sp.Symbol("t")
-    m, g     = sp.symbols("m g", positive=True)
-    R_traj, omega_traj = sp.symbols(r"R \omega", positive=True)
-
-    # position errors
-    ex, ey, ez = sp.symbols("e_x e_y e_z")
-
-    # velocities
-    vx, vy, vz    = sp.symbols("v_x v_y v_z")
-    vxd, vyd, vzd = sp.symbols(r"v_{xd} v_{yd} v_{zd}")
-
-    # feedforward accelerations (general + circle-specific)
-    # sp.Symbol (singular) is the safest way when names contain braces.
-    ax_ff = sp.Symbol(r"a_{x,ff}")
-    ay_ff = sp.Symbol(r"a_{y,ff}")
-    az_ff = sp.Symbol(r"a_{z,ff}")
-
-    # gains
-    kx, ky, kz = sp.symbols("k_x k_y k_z", positive=True)
-    kv         = sp.Symbol(r"k_v", positive=True)
-
-    # ── circle feedforward: ẍ_d = d²/dt²[R cos(ωt), R sin(ωt), z_d] ──
-    ax_ff_circle = -R_traj * omega_traj**2 * sp.cos(omega_traj * t)
-    ay_ff_circle = -R_traj * omega_traj**2 * sp.sin(omega_traj * t)
-    az_ff_circle = sp.Integer(0)
-
-    # ── outer loop (Lyapunov, same as kinematic notebook) ──
-    vx_cmd = vxd - kx * ex
-    vy_cmd = vyd - ky * ey
-    vz_cmd = vzd - kz * ez
-
-    # ── middle loop: velocity error + feedforward → desired acceleration ──
-    ax_des = kv * (vx_cmd - vx) + ax_ff
-    ay_des = kv * (vy_cmd - vy) + ay_ff
-    az_des = kv * (vz_cmd - vz) + az_ff
-
-    # ── same loop but with circle feedforward substituted ──
-    ax_des_circle = ax_des.subs(ax_ff, ax_ff_circle)
-    ay_des_circle = ay_des.subs(ay_ff, ay_ff_circle)
-    az_des_circle = az_des.subs(az_ff, az_ff_circle)
-
-    # ── thrust vector in world frame ──
-    Fx = m * ax_des
-    Fy = m * ay_des
-    Fz = m * (az_des + g)
-    T  = sp.sqrt(Fx**2 + Fy**2 + Fz**2)
-
-    # ── hover condition with feedforward (ex=ey=ez=0, v=vd) ──
-    T_hover = sp.simplify(T.subs({
-        ex: 0, ey: 0, ez: 0,
-        vx: vxd, vy: vyd, vz: vzd,
-        ax_ff: ax_ff_circle, ay_ff: ay_ff_circle, az_ff: az_ff_circle,
-    }))
-
-    # ── Vdot for outer-loop Lyapunov (unchanged by feedforward) ──
-    V     = sp.Rational(1, 2) * (ex**2 + ey**2 + ez**2)
-    V_dot = ex * (vx_cmd - vxd) + ey * (vy_cmd - vyd) + ez * (vz_cmd - vzd)
-    V_dot = sp.expand(V_dot)
-
+    m, T = sp.symbols("m T", positive=True)
+    th = sp.Matrix(sp.symbols(r"\theta_1:4", real=True))
+    Rd = _generic_matrix("R_d")
+    e3 = sp.Matrix([0, 0, 1])
+    Re_first_order = sp.eye(3) + hat(th)
+    Delta_lin = (T / m) * Rd * (Re_first_order - sp.eye(3)) * e3
+    B = Delta_lin.jacobian(th)
+    check_B = _is_zero(B - (-(T / m) * Rd * hat(e3)))
     return {
-        # outer loop
-        "vx_cmd":  vx_cmd,
-        "vy_cmd":  vy_cmd,
-        "vz_cmd":  vz_cmd,
-        # middle loop (general)
-        "ax_des":  ax_des,
-        "ay_des":  ay_des,
-        "az_des":  az_des,
-        # circle feedforward terms
-        "ax_ff_circle": ax_ff_circle,
-        "ay_ff_circle": ay_ff_circle,
-        # middle loop with circle feedforward substituted
-        "ax_des_circle": ax_des_circle,
-        "ay_des_circle": ay_des_circle,
-        # thrust
-        "Fx": Fx, "Fy": Fy, "Fz": Fz,
-        "T":  T,
-        "T_hover": T_hover,
-        # Lyapunov
-        "V":     V,
-        "V_dot": V_dot,
+        "Delta_lin": Delta_lin,
+        "B": B,
+        "checks": {"B_equals_minus_T_over_m_Rd_hat_e3": check_B},
     }
-```
 
-### `src/symbolic/quadcopter_kinematic_lyapunov.py`
 
-```python
-import sympy as sp
-
-def derive_lyapunov():
-    """
-    Derives Lyapunov-based kinematic control for a quadcopter in 3D space tracking a trajectory.
-    We model the quadcopter kinematically as a point mass in R^3 with heading.
-    State: p = [x, y, z]^T, psi (yaw).
-    Inputs: v = [v_x, v_y, v_z]^T, omega_psi.
-    Reference: p_d = [x_d, y_d, z_d]^T, psi_d.
-    """
-    # 1. Define states and references
-    x, y, z, psi = sp.symbols('x y z psi', real=True)
-    xd, yd, zd, psid = sp.symbols('x_d y_d z_d psi_d', real=True)
-    vxd, vyd, vzd, psid_dot = sp.symbols(r'v_{x\,d} v_{y\,d} v_{z\,d} \dot{\psi}_{d}', real=True)
-
-    # 2. Define Tracking Errors
-    ex = x - xd
-    ey = y - yd
-    ez = z - zd
-    epsi = psi - psid
-
-    # 3. Define the Lyapunov function Candidate
-    # We want to drive all position and yaw errors to zero
-    V = sp.Rational(1, 2) * (ex**2 + ey**2 + ez**2 + epsi**2)
-
-    # 4. Propose control inputs to make \dot{V} negative definite
-    # \dot{x} = v_x, \dot{y} = v_y, \dot{z} = v_z, \dot{\psi} = \omega_\psi
-    vx, vy, vz, w_psi = sp.symbols(r'v_x v_y v_z \omega_\psi', real=True)
-    kx, ky, kz, kpsi = sp.symbols(r'k_x k_y k_z k_\psi', positive=True, real=True)
-
-    # Proposed Control Laws
-    law_vx = vxd - kx * ex
-    law_vy = vyd - ky * ey
-    law_vz = vzd - kz * ez
-    law_wpsi = psid_dot - kpsi * epsi
-
-    # 5. Compute \dot{V}
-    # \dot{V} = e_x \dot{e}_x + e_y \dot{e}_y + e_z \dot{e}_z + e_\psi \dot{e}_\psi
-    # where \dot{e}_x = v_x - v_{x,d}, etc.
-    ex_dot = vx - vxd
-    ey_dot = vy - vyd
-    ez_dot = vz - vzd
-    epsi_dot = w_psi - psid_dot
-
-    V_dot = ex * ex_dot + ey * ey_dot + ez * ez_dot + epsi * epsi_dot
-
-    # Substitute our control laws into V_dot
-    V_dot_sub = V_dot.subs({
-        vx: law_vx,
-        vy: law_vy,
-        vz: law_vz,
-        w_psi: law_wpsi
-    }).simplify()
-
-    return {
-        "V": V,
-        "V_dot": V_dot,
-        "V_dot_sub": V_dot_sub,
-        "law_vx": law_vx,
-        "law_vy": law_vy,
-        "law_vz": law_vz,
-        "law_wpsi": law_wpsi,
-    }
+def run_all_checks() -> dict:
+    """All symbolic checks, keyed by '<section>.<check>'."""
+    out = {}
+    for name, fn in [("attitude", derive_attitude_certificate),
+                     ("position", derive_position_certificate),
+                     ("cascade", derive_cascade_linearization)]:
+        for k, v in fn()["checks"].items():
+            out[f"{name}.{k}"] = v
+    return out
 ```
 
 ### `src/symbolic/quadcopter_path_following.py`
@@ -3779,20 +2396,24 @@ def derive_lyapunov():
 """
 src/symbolic/quadcopter_path_following.py
 
-Symbolic Lyapunov derivation for the path-following controller on a
-parametric circle path.
+Path following on the circle p_d(γ) = [R cos γ, R sin γ, z_d] with the
+virtual-target law used by src/control/path_following_controller.py:
 
-Key difference from trajectory tracking
-----------------------------------------
-Trajectory tracking:   p_d(t)  — reference moves with physical time
-Path following:        p_d(γ)  — reference moves with virtual parameter γ
+    γ̇ = v_d + k_γ e_s,     e_s = t̂(γ)ᵀ e_p   (along-track error),
+    v_cmd = (∂p_d/∂γ) γ̇ − K e_p.
 
-The virtual parameter evolves as:
-    γ̇ = v_d + k_γ ŷ_t(γ)^T e_p
-
-where ŷ_t is the unit tangent to the path.  This lets the virtual target
-adapt its speed to the vehicle's position, giving smoother transients when
-starting far from the path.
+What this shows
+---------------
+Under the kinematic model ṗ = v_cmd the error obeys ė_p = −K e_p for ANY
+choice of γ̇: the γ-law does not enter the error dynamics.  Hence
+    e_p(t) = e^{−Kt} e_p(0)   and   γ̇(t) → v_d.
+Consequence: comparing ‖e_p(t)‖ between path following and trajectory
+tracking measures only e_p(0), i.e. where the reference starts; it says
+nothing about the merit of the γ-law.  The same holds in the full
+dynamic model, because the cascade controller sees p_d(γ(t)) as an
+ordinary reference (its exact second derivative is supplied as
+feedforward), so the position/attitude result of
+quadcopter_certified_lyapunov.py applies unchanged.
 """
 
 from __future__ import annotations
@@ -3800,740 +2421,179 @@ import sympy as sp
 
 
 def derive_path_following() -> dict:
-    """
-    Lyapunov-based path following for a circle p_d(γ) = [R cosγ, R sinγ, z_d].
+    R, v_d, k_gamma = sp.symbols(r"R v_d k_\gamma", positive=True)
+    gamma = sp.Symbol(r"\gamma", real=True)
+    k = sp.symbols("k_x k_y k_z", positive=True)
+    K = sp.diag(*k)
+    e_p = sp.Matrix(sp.symbols("e_x e_y e_z", real=True))
+    gamma_dot = sp.Symbol(r"\dot\gamma", real=True)        # arbitrary, then specialised
 
-    State      : position error  e_p = p - p_d(γ)
-    Control    : velocity command  v_cmd = (∂p_d/∂γ)γ̇ − K e_p
-    Gamma law  : γ̇ = v_d + k_γ t̂(γ)^T e_p
-    """
-    # ── symbols ──────────────────────────────────────────────────────────────
-    R, gamma, v_d   = sp.symbols(r"R \gamma v_d", positive=True)
-    k_gamma         = sp.Symbol(r"k_\gamma", positive=True)
-    kx, ky, kz      = sp.symbols("k_x k_y k_z", positive=True)
-    ex, ey, ez      = sp.symbols("e_x e_y e_z", real=True)
-
-    # ── path geometry ─────────────────────────────────────────────────────────
-    # Position on path
-    p_d  = sp.Matrix([R * sp.cos(gamma), R * sp.sin(gamma), 0])
-
-    # Unnormalised tangent ∂p_d/∂γ
-    dp_d = sp.diff(p_d, gamma)
-
-    # Unit tangent t̂ = ∂p_d/∂γ / |∂p_d/∂γ|
-    dp_d_norm = sp.sqrt(dp_d.dot(dp_d))
-    t_hat     = sp.simplify(dp_d / dp_d_norm)   # [-sin γ, cos γ, 0]
-
-    # Path yaw  ψ_d(γ) = atan2(dp_d_y, dp_d_x) = γ + π/2   (for circle)
-    psi_d     = gamma + sp.pi / 2
-    dpsi_d_dg = sp.diff(psi_d, gamma)            # = 1
-
-    # ── error dynamics ────────────────────────────────────────────────────────
-    e_p = sp.Matrix([ex, ey, ez])
-
-    # Gamma dynamics
-    e_s      = t_hat.dot(e_p)                    # along-path ("tangential") error
-    #gamma_dot = v_d + k_gamma * e_s
-    gamma_dot = v_d * (1.0 + k_gamma * e_s)
-
-    # Feedforward velocity from the moving virtual target
-    v_ff = dp_d * gamma_dot
-
-    # Diagonal gain matrix
-    K = sp.diag(kx, ky, kz)
-
-    # Full velocity command
-    v_cmd = v_ff - K * e_p
-
-    # Error dynamics  ė_p = v_cmd − ∂p_d/∂γ · γ̇ = −K e_p
-    e_p_dot = sp.simplify(v_cmd - dp_d * gamma_dot)
-
-    # ── Lyapunov function ─────────────────────────────────────────────────────
-    V = sp.Rational(1, 2) * e_p.dot(e_p)
-
-    # V̇ = ∇V · ė_p = e_p^T (−K e_p)
-    V_dot = sp.expand(e_p.dot(e_p_dot))
-
-    # Confirm negative definiteness symbolically
-    # V_dot = −kx ex² − ky ey² − kz ez²
-    V_dot_expected = -(kx * ex**2 + ky * ey**2 + kz * ez**2)
-    assert sp.simplify(V_dot - V_dot_expected) == 0, \
-        "V_dot does not match expected form"
-
-    # ── gamma convergence ─────────────────────────────────────────────────────
-    # As e_p → 0:  γ̇ → v_d  (desired path speed)
-    gamma_dot_at_zero = gamma_dot.subs({ex: 0, ey: 0, ez: 0})
-
-    # ── along-path vs cross-path decomposition ────────────────────────────────
-    # Normal to path (inward for circle): n̂ = [−cos γ, −sin γ, 0]
+    p_d   = sp.Matrix([R * sp.cos(gamma), R * sp.sin(gamma), 0])
+    dp_d  = p_d.diff(gamma)
+    t_hat = sp.simplify(dp_d / R)
     n_hat = sp.Matrix([-sp.cos(gamma), -sp.sin(gamma), 0])
 
-    # Cross-track error
-    e_n = n_hat.dot(e_p)
+    v_cmd   = dp_d * gamma_dot - K * e_p
+    e_p_dot = sp.simplify(v_cmd - dp_d * gamma_dot)          # ṗ − ṗ_d with ṗ = v_cmd
 
-    # Along-track error
-    e_s_sym = t_hat.dot(e_p)
+    V     = sp.Rational(1, 2) * e_p.dot(e_p)
+    V_dot = sp.expand(e_p.dot(e_p_dot))
 
-    return {
-        # path geometry
-        "p_d":          p_d,
-        "dp_d":         dp_d,
-        "t_hat":        t_hat,
-        "n_hat":        n_hat,
-        "psi_d":        psi_d,
-        "dpsi_d_dg":    dpsi_d_dg,
-        # gamma dynamics
-        "gamma_dot":    gamma_dot,
-        "e_s":          e_s_sym,
-        "e_n":          e_n,
-        "gamma_dot_at_zero": gamma_dot_at_zero,
-        # error dynamics
-        "v_ff":         v_ff,
-        "v_cmd":        v_cmd,
-        "e_p_dot":      e_p_dot,
-        # Lyapunov
-        "V":            V,
-        "V_dot":        V_dot,
-        "is_ND":        True,
-        "stability":    "GAS",
-    }
-
-
-def compare_trajectory_vs_path_following() -> dict:
-    """
-    Symbolic comparison: show what changes when switching from trajectory
-    tracking to path following.
-
-    In trajectory tracking:
-        p_d(t) = [R cos(ω t), R sin(ω t), z_d]
-        γ = ω t  (fixed, not adaptive)
-        ė_p = −K e_p  +  ZERO perturbation   (if inner loop perfect)
-
-    In path following:
-        p_d(γ),  γ̇ = v_d + k_γ t̂^T e_p
-        ė_p = −K e_p  (exactly, by construction)
-
-    The difference:  path following adds k_γ t̂^T e_p to γ̇.
-    This slows the virtual target when the vehicle is behind it
-    and advances it when the vehicle is ahead.
-    """
-    R, omega, t     = sp.symbols(r"R \omega t", positive=True)
-    v_d             = sp.Symbol("v_d", positive=True)
-    kx, ky          = sp.symbols("k_x k_y", positive=True)
-    k_gamma         = sp.Symbol(r"k_\gamma", positive=True)
-    ex, ey          = sp.symbols("e_x e_y", real=True)
-
-    # ── Trajectory tracking ───────────────────────────────────────────────────
-    # Reference at fixed time:  γ_TT = ω t
-    # v_ref(t) = dγ/dt * dp_d/dγ = ω * [-R sin(ω t), R cos(ω t)]
-    gamma_TT     = omega * t
-    v_ref_TT     = sp.Matrix([
-        -R * omega * sp.sin(gamma_TT),
-         R * omega * sp.cos(gamma_TT),
-    ])
-
-    # ── Path following ────────────────────────────────────────────────────────
-    gamma_sym    = sp.Symbol(r"\gamma")
-    t_hat_sym    = sp.Matrix([-sp.sin(gamma_sym), sp.cos(gamma_sym)])
-    e_p_sym      = sp.Matrix([ex, ey])
-
-    gamma_dot_PF = v_d + k_gamma * t_hat_sym.dot(e_p_sym)
-    v_ref_PF     = sp.Matrix([
-        -R * sp.sin(gamma_sym),
-         R * sp.cos(gamma_sym),
-    ]) * gamma_dot_PF
-
-    # ── Key difference ────────────────────────────────────────────────────────
-    # γ̇_PF − γ̇_TT = k_γ t̂^T e_p
-    # This adapts the virtual target speed based on vehicle position.
-    gamma_dot_diff = sp.simplify(gamma_dot_PF - v_d)   # = k_γ t̂^T e_p
+    e_s = t_hat.dot(e_p)
+    gamma_law = v_d + k_gamma * e_s
 
     return {
-        "gamma_TT":        gamma_TT,
-        "v_ref_TT":        v_ref_TT,
-        "gamma_dot_PF":    gamma_dot_PF,
-        "v_ref_PF":        v_ref_PF,
-        "gamma_dot_diff":  gamma_dot_diff,
+        "p_d": p_d, "dp_d": dp_d, "t_hat": t_hat, "n_hat": n_hat,
+        "e_s": e_s, "e_n": n_hat.dot(e_p),
+        "gamma_law": gamma_law,
+        "v_cmd": v_cmd.subs(gamma_dot, gamma_law),
+        "e_p_dot": e_p_dot,
+        "V": V, "V_dot": V_dot,
+        "gamma_dot_at_zero_error": gamma_law.subs({s: 0 for s in e_p}),
+        "checks": {
+            "error_dynamics_independent_of_gamma_dot": e_p_dot.equals(-K * e_p) and not e_p_dot.has(gamma_dot),
+            "V_dot_is_minus_eT_K_e": sp.simplify(V_dot + (e_p.T * K * e_p)[0, 0]) == 0,
+        },
     }
 ```
 
-### `src/utils/animations.py`
+### `tests/conftest.py`
 
 ```python
-"""
-src/utils/2d_animations.py
-
-Reusable 2D matplotlib animations for top-down vehicle visualisation.
-Each function returns a matplotlib.animation.FuncAnimation object —
-the caller decides whether to display it (HTML5) or save it.
-"""
-
-from __future__ import annotations
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib import animation
-from typing import Optional
-import base64
+import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
-import matplotlib as mpl
-from matplotlib.animation import writers
-from tqdm import tqdm
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _heading_line(x: float, y: float, angle: float, length: float = 0.5):
-    """Return ([x0, x1], [y0, y1]) for a heading indicator arrow."""
-    return (
-        [x, x + length * np.cos(angle)],
-        [y, y + length * np.sin(angle)],
-    )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# public API
-# ──────────────────────────────────────────────────────────────────────────────
-
-def quadcopter_topdown(
-    df: pd.DataFrame,
-    dt: float,
-    *,
-    x_col: str       = "x",
-    y_col: str       = "y",
-    yaw_col: str     = "yaw",
-    xd_col: str      = "xd",
-    yd_col: str      = "yd",
-    psid_col: str    = "psid",
-    decimate: int    = 50,
-    heading_len: float = 0.5,
-    xlim: tuple[float, float] = (-5.0, 5.0),
-    ylim: tuple[float, float] = (-5.0, 5.0),
-    title: str       = "Quadcopter Top-Down View",
-    figsize: tuple[float, float] = (8.0, 8.0),
-    fig: Optional[plt.Figure] = None,
-    ax:  Optional[plt.Axes]  = None,
-) -> animation.FuncAnimation:
-    """
-    Animate a top-down (XY) view of actual vs reference trajectory.
-
-    Parameters
-    ----------
-    df        : simulation DataFrame (from SimLogger.to_dataframe())
-    dt        : physics timestep [s]  — used to set animation interval
-    decimate  : keep every Nth row to control animation speed/length
-    heading_len : length of the heading arrow in metres
-
-    Returns
-    -------
-    matplotlib.animation.FuncAnimation  (call .to_html5_video() or .save())
-    """
-    df_anim = df.iloc[::decimate].reset_index(drop=True)
-
-    if fig is None or ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
-    ax.set_xlabel("X [m]")
-    ax.set_ylabel("Y [m]")
-    ax.set_title(title)
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(True)
-
-    # ── artists ──
-    actual_traj, = ax.plot([], [], "b-",  alpha=0.5, label="Actual")
-    ref_traj,    = ax.plot([], [], "r--", alpha=0.5, label="Reference")
-    actual_dot,  = ax.plot([], [], "bo",  markersize=7)
-    ref_dot,     = ax.plot([], [], "rx",  markersize=7)
-    actual_head, = ax.plot([], [], "b-",  linewidth=2)
-    ref_head,    = ax.plot([], [], "r-",  linewidth=2)
-    time_text    = ax.text(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
-
-    ax.legend(loc="upper right")
-
-    _artists = (actual_traj, ref_traj, actual_dot, ref_dot,
-                actual_head, ref_head, time_text)
-
-    def _init():
-        for a in _artists:
-            if hasattr(a, "set_data"):
-                a.set_data([], [])
-        time_text.set_text("")
-        return _artists
-
-    def _update(frame: int):
-        hist = df_anim.iloc[: frame + 1]
-        cur  = df_anim.iloc[frame]
-
-        actual_traj.set_data(hist[x_col],  hist[y_col])
-        ref_traj.set_data(hist[xd_col], hist[yd_col])
-
-        actual_dot.set_data([cur[x_col]],  [cur[y_col]])
-        ref_dot.set_data(   [cur[xd_col]], [cur[yd_col]])
-
-        hx, hy = _heading_line(cur[x_col],  cur[y_col],  cur[yaw_col],  heading_len)
-        rx, ry = _heading_line(cur[xd_col], cur[yd_col], cur[psid_col], heading_len)
-        actual_head.set_data(hx, hy)
-        ref_head.set_data(rx, ry)
-
-        time_text.set_text(f"t = {cur['t']:.2f} s")
-        return _artists
-
-    interval_ms = decimate * dt * 1000.0   # wall-clock ms per frame
-
-    anim = animation.FuncAnimation(
-        fig,
-        _update,
-        frames=len(df_anim),
-        init_func=_init,
-        blit=True,
-        interval=interval_ms,
-    )
-
-    plt.close(fig)   # prevent double-display in notebooks
-    return anim
-
-
-def error_convergence(
-    df: pd.DataFrame,
-    error_cols: list[str],
-    labels: Optional[list[str]] = None,
-    *,
-    title: str = "Error Convergence",
-    figsize: tuple[float, float] = (10.0, 4.0),
-    fig: Optional[plt.Figure] = None,
-    ax:  Optional[plt.Axes]  = None,
-) -> animation.FuncAnimation:
-    """
-    Animate error signals growing in time (useful for convergence demos).
-
-    Parameters
-    ----------
-    error_cols : list of column names in df  (e.g. ['ex', 'ey', 'ez'])
-    labels     : display names (defaults to error_cols)
-    """
-    labels = labels or error_cols
-
-    if fig is None or ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-
-    ax.set_xlim(df["t"].iloc[0], df["t"].iloc[-1])
-    y_max = df[error_cols].abs().max().max() * 1.2
-    ax.set_ylim(-y_max, y_max)
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("Error")
-    ax.set_title(title)
-    ax.axhline(0, color="black", linewidth=0.5, linestyle="--")
-    ax.grid(True)
-
-    lines = [ax.plot([], [], label=lbl)[0] for lbl in labels]
-    ax.legend()
-
-    step = max(1, len(df) // 300)   # ~300 animation frames regardless of df length
-    df_anim = df.iloc[::step].reset_index(drop=True)
-
-    def _init():
-        for ln in lines:
-            ln.set_data([], [])
-        return lines
-
-    def _update(frame: int):
-        hist = df_anim.iloc[: frame + 1]
-        for ln, col in zip(lines, error_cols):
-            ln.set_data(hist["t"], hist[col])
-        return lines
-
-    anim = animation.FuncAnimation(
-        fig, _update, frames=len(df_anim),
-        init_func=_init, blit=True, interval=30,
-    )
-    plt.close(fig)
-    return anim
-
-
-def to_html5_video_with_progress(anim: animation.FuncAnimation, embed_limit: Optional[float] = None, *, desc: str = "Rendering animation") -> str:
-    """
-    Save an animation to an H264 (mp4) in-memory HTML5 video tag while
-    displaying a tqdm progress bar during frame generation.
-
-    Parameters
-    ----------
-    anim : matplotlib.animation.FuncAnimation
-        The animation to save.
-    embed_limit : float, optional
-        Maximum embed size in MB (same semantics as matplotlib's
-        Animation.to_html5_video). If the generated video exceeds the
-        limit, the function returns the string 'Video too large to embed.'
-    desc : str
-        Description shown in the tqdm bar.
-
-    Returns
-    -------
-    str
-        HTML5 `<video>` tag with base64-embedded mp4 video, or the
-        'Video too large to embed.' string when the embed limit is
-        exceeded.
-    """
-    VIDEO_TAG = r'''<video {size} {options}>
-  <source type="video/mp4" src="data:video/mp4;base64,{video}">
-  Your browser does not support the video tag.
-</video>'''
-
-    # determine embed limit (MB -> bytes)
-    embed_limit = mpl._val_or_rc(embed_limit, 'animation.embed_limit')
-    embed_limit_bytes = embed_limit * 1024 * 1024
-
-    with TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "temp.m4v"
-
-        # instantiate writer similar to matplotlib's implementation
-        Writer = writers[mpl.rcParams['animation.writer']]
-        writer = Writer(codec='h264',
-                        bitrate=mpl.rcParams['animation.bitrate'],
-                        fps=(1000.0 / getattr(anim, '_interval', 200)))
-
-        # progress bar state
-        bar = tqdm(total=None, desc=desc, unit='frame')
-        last = {'n': 0}
-
-        def _progress_callback(current_frame, total_frames):
-            # total_frames may be None
-            if total_frames is not None and bar.total is None:
-                bar.total = total_frames
-            # current_frame is zero-based index; we want count
-            cur_count = (current_frame + 1) if current_frame is not None else None
-            if cur_count is None:
-                return
-            delta = cur_count - last['n']
-            if delta > 0:
-                bar.update(delta)
-                last['n'] = cur_count
-
-        try:
-            anim.save(str(path), writer=writer, progress_callback=_progress_callback)
-        finally:
-            bar.close()
-
-        vid64 = base64.encodebytes(path.read_bytes())
-
-    vid_len = len(vid64)
-    if vid_len >= embed_limit_bytes:
-        mpl._log.warning(
-            "Animation movie is %s bytes, exceeding the limit of %s.", vid_len, embed_limit_bytes
-        )
-        return 'Video too large to embed.'
-
-    video_str = vid64.decode('ascii')
-    video_size = 'width="{}" height="{}"'.format(*writer.frame_size)
-
-    options = ['controls', 'autoplay']
-    if getattr(anim, '_repeat', False):
-        options.append('loop')
-
-    return VIDEO_TAG.format(video=video_str, size=video_size, options=' '.join(options))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ```
 
-### `src/utils/config.py`
+### `tests/test_closed_loop.py`
 
 ```python
-import yaml
-from pydantic import BaseModel
-
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-```
-
-### `src/utils/plotting.py`
-
-```python
-"""
-src/utils/plotting.py
-
-Shared matplotlib style + figure-saving helpers.
-
-Usage
------
-from src.utils.plotting import set_style, FigureManager
-
-set_style()                          # call once at notebook top
-
-fm = FigureManager(cfg)              # reads figures_dir from config
-fm.save(fig, "errors")               # saves to <figures_dir>/errors.{pdf,png}
-fm.save_and_show(fig, "3d_path")     # saves + displays inline in notebook
-"""
-
-from __future__ import annotations
-
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-from pathlib import Path
-from typing import Union, Sequence
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# global style
-# ──────────────────────────────────────────────────────────────────────────────
-
-def set_style(usetex: bool = False) -> None:
-    """
-    Keep Matplotlib close to its default appearance while forcing scientific
-    notation for large or small values.
-    Set usetex=True when building the LaTeX report (requires a TeX installation).
-    """
-    plt.rcParams.update({
-        "text.usetex": usetex,
-        "axes.formatter.use_mathtext": True,
-        "axes.formatter.limits": (-3, 3),
-        "axes.formatter.useoffset": True,
-    })
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# figure manager
-# ──────────────────────────────────────────────────────────────────────────────
-
-class FigureManager:
-    """
-    Saves figures to a folder specified in the simulation config,
-    and optionally displays them inline.
-
-    Parameters
-    ----------
-    config      : dict loaded from a YAML config file
-    base_dir    : root path (usually the project ROOT); figures_dir in
-                  config is resolved relative to this
-    formats     : file formats to write (default: pdf + png)
-    """
-
-    def __init__(
-        self,
-        config: dict,
-        base_dir: Union[str, Path] = ".",
-        formats: Sequence[str] = ("pdf", "png"),
-    ):
-        self.formats = list(formats)
-
-        figures_dir: str = config.get("figures_dir", "figures/default")
-        self.out_dir = Path(base_dir) / figures_dir
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── core ──────────────────────────────────────────────────────────────────
-
-    def save(
-        self,
-        fig: plt.Figure,
-        name: str,
-        *,
-        formats: Sequence[str] | None = None,
-        close: bool = False,
-    ) -> list[Path]:
-        """
-        Save *fig* as <figures_dir>/<name>.<ext> for each format.
-
-        Returns the list of paths written.
-        """
-        fmts   = list(formats) if formats is not None else self.formats
-        paths  = []
-        for ext in fmts:
-            p = self.out_dir / f"{name}.{ext}"
-            fig.savefig(p)
-            paths.append(p)
-            print(f"  ↳ saved {p}")
-        if close:
-            plt.close(fig)
-        return paths
-
-    def save_and_show(
-        self,
-        fig: plt.Figure,
-        name: str,
-        *,
-        formats: Sequence[str] | None = None,
-    ) -> list[Path]:
-        """
-        Save *fig* and display it inline (Jupyter / IPython).
-        The figure remains open after this call.
-        """
-        paths = self.save(fig, name, formats=formats)
-        plt.show()          # renders inline in the notebook
-        return paths
-
-    # ── convenience factory methods ──────────────────────────────────────────
-
-    @staticmethod
-    def error_subplots(
-        df,
-        error_cols: list[str],
-        labels: list[str] | None = None,
-        units: list[str] | None = None,
-        ncols: int = 2,
-    ) -> plt.Figure:
-        """
-        Build a grid of error-vs-time subplots ready to save.
-
-        Parameters
-        ----------
-        df         : simulation DataFrame
-        error_cols : column names (e.g. ['ex', 'ey', 'ez', 'epsi'])
-        labels     : subplot titles (defaults to error_cols)
-        units      : y-axis unit strings (e.g. ['m', 'm', 'm', 'rad'])
-        ncols      : columns in the subplot grid
-        """
-        labels = labels or error_cols
-        units  = units  or [""] * len(error_cols)
-        n      = len(error_cols)
-        nrows  = (n + ncols - 1) // ncols
-
-        fig, axs = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
-        axs_flat = axs.flatten() if n > 1 else [axs]
-
-        for i, (col, lbl, unit) in enumerate(zip(error_cols, labels, units)):
-            ax = axs_flat[i]
-            ax.plot(df["t"], df[col])
-            ax.set_title(lbl)
-            ax.set_xlabel("t [s]")
-            ax.set_ylabel(f"[{unit}]" if unit else "")
-            ax.axhline(0, color="black", linewidth=0.5, linestyle="--")
-
-            # enforce scientific tick formatting for these axes
-            try:
-                ax.ticklabel_format(axis="both", style="sci", scilimits=(0, 0), useOffset=True)
-            except Exception:
-                pass
-
-        # hide unused axes
-        for j in range(n, len(axs_flat)):
-            axs_flat[j].set_visible(False)
-
-        fig.tight_layout()
-        return fig
-
-    @staticmethod
-    def lyapunov_levelsets(
-        df,
-        x_col: str = "ex",
-        y_col: str = "ey",
-        *,
-        n_levels: int = 15,
-        title: str = r"Level sets of $V$ (projected on $e_x$–$e_y$)",
-        figsize: tuple = (6, 6),
-    ) -> plt.Figure:
-        """
-        Plot Lyapunov level sets V(ex,ey) = 0.5*(ex²+ey²) with the
-        error trajectory overlaid.
-        """
-        import numpy as np
-
-        fig, ax = plt.subplots(figsize=figsize)
-
-        e_range = max(df[[x_col, y_col]].abs().max()) * 1.2
-        ev = np.linspace(-e_range, e_range, 200)
-        EX, EY = np.meshgrid(ev, ev)
-        VV = 0.5 * (EX**2 + EY**2)
-
-        cp = ax.contour(EX, EY, VV, levels=n_levels, cmap="viridis", alpha=0.5)
-        fig.colorbar(cp, ax=ax, label=r"$V(e_x, e_y)$")
-
-        ax.plot(df[x_col], df[y_col], "k-",  linewidth=1.8, label="Error trajectory")
-        ax.plot(df[x_col].iloc[0],  df[y_col].iloc[0],  "go", label="Start")
-        ax.plot(df[x_col].iloc[-1], df[y_col].iloc[-1], "ro", label="End")
-
-        ax.axhline(0, color="black", linewidth=0.5)
-        ax.axvline(0, color="black", linewidth=0.5)
-        ax.set_xlabel(r"$e_x$ [m]")
-        ax.set_ylabel(r"$e_y$ [m]")
-        ax.set_title(title)
-        ax.set_aspect("equal")
-        ax.legend()
-        # enforce scientific tick formatting on levelset axes
-        try:
-            ax.ticklabel_format(axis="both", style="sci", scilimits=(0, 0), useOffset=True)
-        except Exception:
-            pass
-
-        fig.tight_layout()
-        return fig
-
-    @staticmethod
-    def path_3d(
-        df,
-        *,
-        x_col: str  = "x",  y_col: str  = "y",  z_col: str  = "z",
-        xd_col: str = "xd", yd_col: str = "yd", zd_col: str = "zd",
-        title: str = "3D Path Following",
-        figsize: tuple = (8, 8),
-    ) -> plt.Figure:
-        """3D actual-vs-reference path plot."""
-        fig = plt.figure(figsize=figsize)
-        ax  = fig.add_subplot(111, projection="3d")
-
-        ax.plot(df[xd_col], df[yd_col], df[zd_col], "r--", label="Reference")
-        ax.plot(df[x_col],  df[y_col],  df[z_col],  "b-",  label="Actual")
-
-        ax.scatter([df[x_col].iloc[0]],  [df[y_col].iloc[0]],  [df[z_col].iloc[0]],
-                   color="black", marker="o", label="Start (actual)")
-        ax.scatter([df[xd_col].iloc[0]], [df[yd_col].iloc[0]], [df[zd_col].iloc[0]],
-                   color="green", marker="x", label="Start (ref)")
-
-        ax.set_xlabel("X [m]")
-        ax.set_ylabel("Y [m]")
-        ax.set_zlabel("Z [m]")
-        ax.set_title(title)
-        ax.legend()
-        # enforce scientific tick formatting on 3D axes
-        try:
-            ax.ticklabel_format(axis="x", style="sci", scilimits=(0, 0), useOffset=True)
-            ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useOffset=True)
-            if hasattr(ax, "zaxis"):
-                ax.zaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-        except Exception:
-            pass
-
-        fig.tight_layout()
-        return fig
-```
-
-### `src/vehicles/__init__.py`
-
-```python
-
-```
-
-### `test_sim.py`
-
-```python
-import mujoco
+"""End-to-end checks on the MuJoCo closed loop with the LMI gains."""
 import numpy as np
+import pytest
 
-m = mujoco.MjModel.from_xml_path("models/unicycle/unicycle.xml")
-d = mujoco.MjData(m)
+from src.control.cascade_controller import vehicle_parameters
+from src.design.lmi_gains import design_cascade_gains
+from src.experiments import load, load_model, simulate_quad
 
-mujoco.mj_resetData(m, d)
-mujoco.mj_step(m, d)
 
-# set velocity directly
-v = 1.0
-omega = 1.0
+@pytest.fixture(scope="module")
+def cfg():
+    return load("quadcopter")
 
-d.qpos[3:7] = [1, 0, 0, 0] # theta=0
-d.qvel[0] = v   # is this global x?
-d.qvel[1] = 0.0 # global y?
-d.qvel[5] = omega 
 
-for _ in range(10):
-    mujoco.mj_step(m, d)
-    print(d.qpos[:3], d.qvel[:3])
+@pytest.fixture(scope="module")
+def gains(cfg):
+    return design_cascade_gains(cfg, load_model(cfg))["controller"]
+
+
+@pytest.fixture(scope="module")
+def run(cfg, gains):
+    return simulate_quad(cfg, gains, t_end=30.0)
+
+
+def test_vehicle_parameters_from_model(cfg):
+    p = vehicle_parameters(load_model(cfg))
+    assert np.isclose(p["mass"], 0.8) and np.allclose(p["J"], [0.0035, 0.0035, 0.006])
+    assert np.allclose(p["A"][0], 1.0)                       # every motor thrusts along body z
+
+
+def test_mission_converges(run):
+    assert run["e_norm"].iloc[-1] < 1e-6
+
+
+def test_motor_forces_within_limits(run, cfg):
+    f = run[["f1", "f2", "f3", "f4"]].to_numpy()
+    f_max = load_model(cfg).actuator_ctrlrange[:, 1].min()
+    assert f.min() >= 0.0 and f.max() <= f_max
+
+
+def test_attitude_lyapunov_function_never_increases(run):
+    assert np.diff(run["V2"].to_numpy()[2:]).max() < 1e-9   # Ω_d needs two samples
+
+
+def test_desired_rate_matches_steady_circle(run, cfg):
+    # steady circle: R_d(t) = Rz(ωt) R_d(0) ⇒ ‖Ω_d‖ = ω, and the backward difference is exact
+    Wd = run[["Wdx", "Wdy", "Wdz"]].to_numpy()[-1]
+    assert abs(np.linalg.norm(Wd) - cfg["trajectory"]["omega"]) < 1e-6
+
+
+def test_pd_law_leaves_residual_error(cfg, gains):
+    pd = simulate_quad(cfg, gains, feedforward=False, t_end=30.0)
+    assert pd["e_norm"].iloc[-1] > 1e-4
+```
+
+### `tests/test_lmi.py`
+
+```python
+"""LMI certificates re-checked numerically, independently of the SDP solver."""
+import numpy as np
+import pytest
+
+from src.design.lmi_gains import DOUBLE_INTEGRATOR_A, design_cascade_gains, fsf_input_bounded
+from src.experiments import load, load_model
+
+
+def test_double_integrator_certificate():
+    B = np.array([[0.0], [1.0]])
+    X0 = [np.array([s1 * 2.0, s2 * 1.0]) for s1 in (-1, 1) for s2 in (-1, 1)]
+    d = fsf_input_bounded(DOUBLE_INTEGRATOR_A, B, [3.0], X0, alpha_max=10.0)
+    P, Acl = np.linalg.inv(d.W), DOUBLE_INTEGRATOR_A + B @ d.K
+    # rate α:  Acl W + W Aclᵀ + 2α W ⪯ 0
+    assert np.linalg.eigvalsh(Acl @ d.W + d.W @ Acl.T + 2 * d.alpha * d.W).max() <= 1e-6
+    # every design point lies in E = {xᵀPx ≤ 1}
+    assert all(x0 @ P @ x0 <= 1 + 1e-4 for x0 in X0)
+    # max over E of |K x| = √(K W Kᵀ) ≤ ū
+    assert np.sqrt(d.K @ d.W @ d.K.T).item() <= 3.0 * (1 + 1e-4)
+
+
+@pytest.fixture(scope="module")
+def design():
+    cfg = load("quadcopter")
+    return design_cascade_gains(cfg, load_model(cfg))
+
+
+def test_cascade_design(design):
+    assert all(design["position"][a]["kv"] > 0 and design["position"][a]["k"] > 0 for a in "xyz")
+    att = design["attitude"]
+    assert np.all(att["G"] > 0) and np.all(att["kW"] > 0)
+    assert np.allclose(0.5 * (att["G"].sum() - att["G"]), att["kappa"])   # κ_j = ½(tr G − g_j)
+    # inner loop faster than outer loop
+    assert att["alpha"].min() > max(design["position"][a]["alpha"] for a in "xyz")
+```
+
+### `tests/test_symbolic.py`
+
+```python
+"""Every identity used in the stability analysis must simplify to zero."""
+import pytest
+
+from src.symbolic.quadcopter_certified_lyapunov import run_all_checks
+from src.symbolic.lyapunov import derive_circular_path_following
+from src.symbolic.quadcopter_path_following import derive_path_following
+
+CHECKS = run_all_checks()
+
+
+@pytest.mark.parametrize("name", sorted(CHECKS))
+def test_quadrotor_identity(name):
+    assert CHECKS[name], name
+
+
+@pytest.mark.parametrize("name,ok", sorted(derive_circular_path_following()["checks"].items()))
+def test_unicycle_identity(name, ok):
+    assert ok, name
+
+
+@pytest.mark.parametrize("name,ok", sorted(derive_path_following()["checks"].items()))
+def test_path_following_identity(name, ok):
+    assert ok, name
 ```
 
 ## Summary
 
-Included **45** readable text files (4235 source lines).
+Included **23** readable text files (2435 source lines).
 
 Omitted files:
-- unrecognized/generated file type: 15
+- unrecognized/generated file type: 19

@@ -9,7 +9,6 @@ Steps
   2. LMI synthesis of actuator-aware gains (cvxpy / Clarabel)
   3. nominal mission: full geometric law vs PD-only law, LMI gains vs paper gains
   4. Monte Carlo over initial positions and attitudes
-  5. unicycle path following
 Outputs go to results/: summary.json, numbers.tex (LaTeX macros used by the
 report) and figures/*.pdf|png.
 """
@@ -27,8 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.design.lmi_gains import design_cascade_gains
-from src.experiments import load, load_model, roa_monte_carlo, simulate_quad, simulate_unicycle
-from src.symbolic.lyapunov import derive_circular_path_following
+from src.experiments import load, load_model, roa_monte_carlo, simulate_quad
 from src.symbolic.quadcopter_certified_lyapunov import run_all_checks
 from src.symbolic.quadcopter_path_following import derive_path_following
 
@@ -97,6 +95,7 @@ def _mission_metrics(df, f_max):
 
 
 def main(quick: bool) -> None:
+    # figures handling
     FIG.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.size": 9, "axes.grid": True, "grid.alpha": 0.3,
                          "axes.spines.top": False, "axes.spines.right": False})
@@ -105,9 +104,8 @@ def main(quick: bool) -> None:
 
     # ── 1. symbolic verification ───────────────────────────────────────────
     checks = {**run_all_checks(),
-              **{f"unicycle.{k}": v for k, v in derive_circular_path_following()["checks"].items()},
               **{f"path_following.{k}": v for k, v in derive_path_following()["checks"].items()}}
-    print(f"[1/5] symbolic checks: {sum(checks.values())}/{len(checks)} passed")
+    print(f"[1/4] symbolic checks: {sum(checks.values())}/{len(checks)} passed")
     if not all(checks.values()):
         raise SystemExit(f"FAILED: {[k for k, v in checks.items() if not v]}")
     summary["symbolic_checks"] = {"passed": sum(checks.values()), "total": len(checks)}
@@ -135,7 +133,7 @@ def main(quick: bool) -> None:
         "certified_roll_deg": float(np.degrees(np.arccos(max(-1.0, 1 - level / (0.5 * (att["G"][1] + att["G"][2])))))),
     }
     _plot_lmi_certificate(pos["x"], cfg)
-    print(f"[2/5] LMI design in {summary['lmi']['solve_time_s']:.1f} s: "
+    print(f"[2/4] LMI design in {summary['lmi']['solve_time_s']:.1f} s: "
           f"alpha_pos={[round(pos[a]['alpha'], 2) for a in 'xyz']}, alpha_att={np.round(att['alpha'], 2).tolist()}")
 
     # ── 3. nominal mission ─────────────────────────────────────────────────
@@ -146,7 +144,7 @@ def main(quick: bool) -> None:
     }
     summary["mission"] = {k: _mission_metrics(v, f_max) for k, v in runs.items()}
     m = summary["mission"]
-    print(f"[3/5] mission: settle {m['lmi_full']['settling_time_5cm_s']:.1f} s, "
+    print(f"[3/4] mission: settle {m['lmi_full']['settling_time_5cm_s']:.1f} s, "
           f"forces [{m['lmi_full']['motor_force_min_N']:.2f}, {m['lmi_full']['motor_force_max_N']:.2f}] N "
           f"(paper gains: [{m['paper_full']['motor_force_min_N']:.0f}, {m['paper_full']['motor_force_max_N']:.0f}] N)")
 
@@ -181,7 +179,7 @@ def main(quick: bool) -> None:
     fig, ax = plt.subplots(figsize=(3.6, 2.6))
     ax.semilogy(df["t"], df["V2"], color=C_REF, lw=1.4)
     ax.set_xlabel("t [s]"); ax.set_ylabel(r"$V_2$"); ax.set_title("Attitude Lyapunov function")
-    ax.set_xlim(0, 10); ax.set_ylim(1e-12, None)
+    ax.set_xlim(0, 10); ax.set_ylim(bottom=1e-12)
     _save(fig, "lyapunov_attitude")
 
     # ── 4. Monte Carlo ─────────────────────────────────────────────────────
@@ -192,16 +190,16 @@ def main(quick: bool) -> None:
     inside = mc["V2_0"] < level
     summary["monte_carlo"] = {
         "n": n, "time_s": time.time() - t,
-        "converged": float(mc["converged"].mean()),
-        "feasible": float(mc["feasible"].mean()),
-        "hit_ground": float(mc["hit_ground"].mean()),
+        "converged": float(mc["converged"].to_numpy().mean()),
+        "feasible": float(mc["feasible"].to_numpy().mean()),
+        "hit_ground": float(mc["hit_ground"].to_numpy().mean()),
         "n_inside_certified_set": int(inside.sum()),
         "converged_inside_certified_set": float(mc.loc[inside, "converged"].mean()) if inside.any() else None,
         "failures_inside_all_ground": bool(mc.loc[inside & ~mc["converged"], "hit_ground"].all()),
         "feasible_small_perturbation": float(mc.loc[(mc["angle_deg"] < 20) & (mc["offset"] < 1.0), "feasible"].mean()),
     }
     s = summary["monte_carlo"]
-    print(f"[4/5] Monte Carlo n={n}: converged {s['converged']:.1%}, within motor limits {s['feasible']:.1%}, "
+    print(f"[4/4] Monte Carlo n={n}: converged {s['converged']:.1%}, within motor limits {s['feasible']:.1%}, "
           f"ground contact {s['hit_ground']:.1%}")
 
     fig, ax = plt.subplots(figsize=(4.6, 3.0))
@@ -214,21 +212,6 @@ def main(quick: bool) -> None:
     ax.set_title(f"Monte Carlo, {n} initial conditions")
     ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
     _save(fig, "monte_carlo")
-
-    # ── 5. unicycle ────────────────────────────────────────────────────────
-    ucfg = load("unicycle")
-    u = simulate_unicycle(ucfg)
-    Rc = ucfg["control"]["R"]
-    summary["unicycle"] = {"final_cross_track_m": float(abs(u["e"].iloc[-1])),
-                           "V_monotone": bool(np.diff(u["V"]).max() <= 1e-9)}
-    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.8))
-    ax[0].plot(Rc * np.cos(th), Rc * np.sin(th), "--", color=C_ALT, lw=1)
-    ax[0].plot(u["x"], u["y"], color=C_REF, lw=1.4); ax[0].set_aspect("equal")
-    ax[0].set_xlabel("x [m]"); ax[0].set_ylabel("y [m]"); ax[0].set_title("Unicycle path")
-    ax[1].semilogy(u["t"], u["V"], color=C_REF, lw=1.4)
-    ax[1].set_xlabel("t [s]"); ax[1].set_ylabel("V"); ax[1].set_title("Lyapunov function")
-    _save(fig, "unicycle")
-    print(f"[5/5] unicycle: final cross-track error {summary['unicycle']['final_cross_track_m']:.1e} m")
 
     # ── outputs ────────────────────────────────────────────────────────────
     summary["runtime_s"] = time.time() - t0
