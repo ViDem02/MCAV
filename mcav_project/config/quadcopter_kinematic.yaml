@@ -10,6 +10,6 @@ video_h: 480
 
 camera:
   lookat: [0.0, 0.0, 0.5]
-  distance: 8.0
+  distance: 4.0
   elevation: -30.0
   azimuth: 45.0

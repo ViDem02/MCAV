@@ -87,6 +87,21 @@ class VideoSim(BaseSim):
         self._write_video()
         self._teardown()
 
+    def _draw_polyline(self, points, rgba, width=0.015):
+        """Append a 3D polyline (capsule segments) to the current render scene.
+        Call after `update_scene` and before `render`."""
+        scn = self._renderer.scene
+        rgba = np.asarray(rgba, dtype=np.float32)
+        pts = np.asarray(points, dtype=np.float64)
+        for a, b in zip(pts[:-1], pts[1:]):
+            if scn.ngeom >= scn.maxgeom:
+                return
+            g = scn.geoms[scn.ngeom]
+            mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_CAPSULE,
+                                np.zeros(3), np.zeros(3), np.eye(3).ravel(), rgba)
+            mujoco.mjv_connector(g, mujoco.mjtGeom.mjGEOM_CAPSULE, width, a, b)
+            scn.ngeom += 1
+
     def _capture_frame(self):
         self._renderer.update_scene(self.data)
         frame = self._renderer.render()          # returns H×W×3 uint8 RGB
