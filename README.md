@@ -39,36 +39,21 @@ Designed on paper, derived in SymPy, and flown in MuJoCo.
 The UAV is underactuated: it has 6 degrees of freedom but only 4 motors, so it must **tilt in order to translate**. The controller exploits time-scale separation. A slow outer loop decides *where to push*. A fast inner loop rotates the body so that the thrust points that way.
 
 ```mermaid
-flowchart TB
-    REF(["Reference<br/>p_d(t), ψ_d(t)"]):::ref
+flowchart LR
+    REF(["🎯 Target<br/>a circle in the sky"]):::ref
+    POS["<b>Position control</b><br/>which way to push?<br/><i>slow loop</i>"]:::outer
+    ATT["<b>Attitude control</b><br/>tilt the drone that way<br/><i>fast loop</i>"]:::inner
+    MIX["<b>Motor mixer</b><br/>split into 4 motor forces"]:::hw
+    DRONE[("🚁 Drone<br/>MuJoCo physics")]:::hw
 
-    subgraph OUTER["Outer loop · position (slow)"]
-        direction LR
-        P["v_cmd = v_d − K e_p"] --> V["a_des = k_v (v_cmd − v) + a_d"]
-        V --> F["F_des = m (a_des + g e₃)<br/>T = ‖F_des‖"]
-    end
-
-    subgraph INNER["Inner loop · attitude on SO(3) (fast)"]
-        direction LR
-        RD["R_d from F_des and ψ_d"] --> ER["e_R = ½ vee(R_dᵀR − RᵀR_d)<br/>e_Ω = Ω − RᵀR_d Ω_d"]
-        ER --> TAU["τ = −k_R e_R − k_Ω e_Ω + Ω × JΩ"]
-    end
-
-    MIX["Motor allocation<br/>(T, τ) → f₁…f₄"]:::hw
-    SIM[("MuJoCo<br/>rigid-body quadrotor")]:::hw
-
-    REF --> P
-    F --> RD
-    F -- "T" --> MIX
-    TAU -- "τ" --> MIX
-    MIX --> SIM
-    SIM -. "p, v" .-> P
-    SIM -. "R, Ω" .-> ER
+    REF --> POS --> ATT --> MIX --> DRONE
+    DRONE -. "position, speed" .-> POS
+    DRONE -. "orientation, spin" .-> ATT
 
     classDef ref fill:#22c55e22,stroke:#22c55e
+    classDef outer fill:#f59e0b22,stroke:#f59e0b
+    classDef inner fill:#f43f5e22,stroke:#f43f5e
     classDef hw fill:#3b82f622,stroke:#3b82f6
-    style OUTER fill:#f59e0b11,stroke:#f59e0b
-    style INNER fill:#f43f5e11,stroke:#f43f5e
 ```
 
 The only difference between the two controllers is the torque law:
